@@ -25,12 +25,21 @@ class GameState {
   }
 
   /// Returns a new [GameState] with the given round added.
-  GameState addRound(Map<String, int> scores) {
+  GameState addRound(
+    Map<String, int> scores, {
+    String? caller,
+    String? partner,
+  }) {
     return GameState(
       players: players,
       rounds: [
         ...rounds,
-        Round(roundNumber: currentRoundNumber, scores: scores),
+        Round(
+          roundNumber: currentRoundNumber,
+          scores: scores,
+          caller: caller,
+          partner: partner,
+        ),
       ],
     );
   }
