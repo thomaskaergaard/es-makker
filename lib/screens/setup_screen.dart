@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/game_state.dart';
 import '../models/player.dart';
 import 'game_screen.dart';
+import 'rules_screen.dart';
 
 /// First screen – lets users configure the number of players and their names.
 class SetupScreen extends StatefulWidget {
@@ -80,6 +81,15 @@ class _SetupScreenState extends State<SetupScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Es Makker – Opsætning'),
+        actions: [
+          IconButton(
+            tooltip: 'Regler',
+            icon: const Icon(Icons.menu_book_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RulesScreen()),
+            ),
+          ),
+        ],
       ),
       body: Center(
         child: ConstrainedBox(
