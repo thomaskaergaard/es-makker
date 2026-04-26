@@ -71,10 +71,22 @@ class _RoundScreenState extends State<RoundScreen> {
     super.dispose();
   }
 
+  /// Returns the negated text representation of a score string.
+  /// e.g. "10" → "-10", "-10" → "10", "" → ""
+  /// Returns empty string for partial/invalid input (e.g. "-" alone).
+  String _negateScoreText(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return '';
+    final value = int.tryParse(trimmed);
+    if (value == null) return '';
+    return '${-value}';
+  }
+
   void _onCallerScoreChanged() {
     if (_syncing || _caller == null || _partner == null) return;
     _syncing = true;
     _controllers[_partner]!.text = _controllers[_caller]!.text;
+    _syncOpponentScores(_controllers[_caller]!.text);
     _syncing = false;
   }
 
@@ -82,21 +94,34 @@ class _RoundScreenState extends State<RoundScreen> {
     if (_syncing || _caller == null || _partner == null) return;
     _syncing = true;
     _controllers[_caller]!.text = _controllers[_partner]!.text;
+    _syncOpponentScores(_controllers[_partner]!.text);
     _syncing = false;
+  }
+
+  /// Updates all opponent (non-caller, non-partner) score fields to the
+  /// negation of [makkerScoreText].
+  void _syncOpponentScores(String makkerScoreText) {
+    final negated = _negateScoreText(makkerScoreText);
+    for (final player in widget.gameState.players) {
+      if (player.name != _caller && player.name != _partner) {
+        _controllers[player.name]!.text = negated;
+      }
+    }
   }
 
   /// Removes any existing sync listeners and attaches new ones for the current
   /// caller/partner pair. Also copies the caller's current score to the partner
-  /// immediately when both are set.
+  /// and negated score to opponents immediately when both are set.
   void _attachSyncListeners() {
     _removeSyncListeners();
     if (_caller == null || _partner == null) return;
 
-    // Immediately copy the caller's current value to the partner.
-    // Use the _syncing guard so that adding the partner listener below does
-    // not bounce the value back to the caller.
+    // Immediately copy the caller's current value to the partner and set
+    // opponents to the negated value. Use the _syncing guard so that adding
+    // the partner listener below does not bounce the value back to the caller.
     _syncing = true;
     _controllers[_partner]!.text = _controllers[_caller]!.text;
+    _syncOpponentScores(_controllers[_caller]!.text);
     _syncing = false;
 
     _controllers[_caller]!.addListener(_onCallerScoreChanged);
