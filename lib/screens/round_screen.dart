@@ -129,11 +129,15 @@ class _RoundScreenState extends State<RoundScreen> {
                 partner: _partner,
                 onCallerChanged: (v) => setState(() {
                   _caller = v;
-                  if (_partner == v) _partner = null;
+                  if (v == null) {
+                    _partner = null; // no caller → no partner
+                  } else if (_partner == v) {
+                    _partner = null; // same player can't be both
+                  }
                 }),
                 onPartnerChanged: (v) => setState(() {
                   _partner = v;
-                  if (_caller == v) _caller = null;
+                  if (v != null && _caller == v) _caller = null;
                 }),
               ),
               const SizedBox(height: 8),
@@ -263,6 +267,7 @@ class _MakkerSelection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final partnerEnabled = caller != null;
 
     DropdownMenuItem<String> noneItem(String label) => DropdownMenuItem<String>(
           value: null,
@@ -309,19 +314,24 @@ class _MakkerSelection extends StatelessWidget {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: partner,
-                    decoration: const InputDecoration(labelText: 'Makker'),
-                    items: [
-                      noneItem('Ingen'),
-                      ...players
-                          .where((p) => p != caller)
-                          .map(
-                            (p) => DropdownMenuItem<String>(
-                              value: p,
-                              child: Text(p),
-                            ),
-                          ),
-                    ],
-                    onChanged: onPartnerChanged,
+                    decoration: InputDecoration(
+                      labelText: 'Makker',
+                      enabled: partnerEnabled,
+                    ),
+                    items: partnerEnabled
+                        ? [
+                            noneItem('Ingen'),
+                            ...players
+                                .where((p) => p != caller)
+                                .map(
+                                  (p) => DropdownMenuItem<String>(
+                                    value: p,
+                                    child: Text(p),
+                                  ),
+                                ),
+                          ]
+                        : [noneItem('Vælg spiller først')],
+                    onChanged: partnerEnabled ? onPartnerChanged : null,
                   ),
                 ),
               ],
