@@ -12,7 +12,11 @@ class RoundScreen extends StatefulWidget {
   });
 
   final GameState gameState;
-  final void Function(Map<String, int> scores) onRoundSubmitted;
+  final void Function(
+    Map<String, int> scores, {
+    String? caller,
+    String? partner,
+  }) onRoundSubmitted;
 
   @override
   State<RoundScreen> createState() => _RoundScreenState();
@@ -21,6 +25,8 @@ class RoundScreen extends StatefulWidget {
 class _RoundScreenState extends State<RoundScreen> {
   final Map<String, TextEditingController> _controllers = {};
   final _formKey = GlobalKey<FormState>();
+  String? _caller;
+  String? _partner;
 
   @override
   void initState() {
@@ -37,6 +43,10 @@ class _RoundScreenState extends State<RoundScreen> {
       for (final c in _controllers.values) {
         c.text = '';
       }
+      setState(() {
+        _caller = null;
+        _partner = null;
+      });
     }
   }
 
@@ -63,13 +73,14 @@ class _RoundScreenState extends State<RoundScreen> {
           int.parse(_controllers[player.name]!.text.trim());
     }
 
-    widget.onRoundSubmitted(scores);
+    widget.onRoundSubmitted(scores, caller: _caller, partner: _partner);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final roundNumber = widget.gameState.currentRoundNumber;
+    final players = widget.gameState.players;
 
     return Center(
       child: ConstrainedBox(
@@ -111,29 +122,80 @@ class _RoundScreenState extends State<RoundScreen> {
                 ),
               ),
               const SizedBox(height: 8),
+              // Makker-par selection
+              _MakkerSelection(
+                players: players.map((p) => p.name).toList(),
+                caller: _caller,
+                partner: _partner,
+                onCallerChanged: (v) => setState(() {
+                  _caller = v;
+                  if (v == null) {
+                    _partner = null; // no caller → no partner
+                  } else if (_partner == v) {
+                    _partner = null; // same player can't be both
+                  }
+                }),
+                onPartnerChanged: (v) => setState(() {
+                  _partner = v;
+                  if (v != null && _caller == v) _caller = null;
+                }),
+              ),
+              const SizedBox(height: 8),
               // Score fields
-              ...widget.gameState.players.map((player) {
+              ...players.map((player) {
+                final isCaller = player.name == _caller;
+                final isPartner = player.name == _partner;
+                final inMakkerPair = isCaller || isPartner;
                 return Card(
+                  color: inMakkerPair
+                      ? theme.colorScheme.primaryContainer.withAlpha(128)
+                      : null,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
                         CircleAvatar(
-                          backgroundColor: theme.colorScheme.primaryContainer,
+                          backgroundColor: inMakkerPair
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.primaryContainer,
                           child: Text(
                             player.name[0].toUpperCase(),
                             style: TextStyle(
-                              color: theme.colorScheme.onPrimaryContainer,
+                              color: inMakkerPair
+                                  ? theme.colorScheme.onPrimary
+                                  : theme.colorScheme.onPrimaryContainer,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
-                            player.name,
-                            style: theme.textTheme.bodyLarge,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                player.name,
+                                style: theme.textTheme.bodyLarge,
+                              ),
+                              if (isCaller)
+                                Text(
+                                  'Spiller',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              else if (isPartner)
+                                Text(
+                                  'Makker',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                         SizedBox(
@@ -180,6 +242,101 @@ class _RoundScreenState extends State<RoundScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Card for selecting the spiller (caller) and makker (partner) for the round.
+class _MakkerSelection extends StatelessWidget {
+  const _MakkerSelection({
+    required this.players,
+    required this.caller,
+    required this.partner,
+    required this.onCallerChanged,
+    required this.onPartnerChanged,
+  });
+
+  final List<String> players;
+  final String? caller;
+  final String? partner;
+  final ValueChanged<String?> onCallerChanged;
+  final ValueChanged<String?> onPartnerChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final partnerEnabled = caller != null;
+
+    DropdownMenuItem<String> noneItem(String label) => DropdownMenuItem<String>(
+          value: null,
+          child: Text(label, style: const TextStyle(color: Colors.black45)),
+        );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.people, color: theme.colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Makker-par (valgfrit)',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: caller,
+                    decoration: const InputDecoration(labelText: 'Spiller'),
+                    items: [
+                      noneItem('Ingen'),
+                      ...players.map(
+                        (p) => DropdownMenuItem<String>(
+                          value: p,
+                          child: Text(p),
+                        ),
+                      ),
+                    ],
+                    onChanged: onCallerChanged,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: partner,
+                    decoration: InputDecoration(
+                      labelText: 'Makker',
+                      enabled: partnerEnabled,
+                    ),
+                    items: partnerEnabled
+                        ? [
+                            noneItem('Ingen'),
+                            ...players
+                                .where((p) => p != caller)
+                                .map(
+                                  (p) => DropdownMenuItem<String>(
+                                    value: p,
+                                    child: Text(p),
+                                  ),
+                                ),
+                          ]
+                        : [noneItem('Vælg spiller først')],
+                    onChanged: partnerEnabled ? onPartnerChanged : null,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

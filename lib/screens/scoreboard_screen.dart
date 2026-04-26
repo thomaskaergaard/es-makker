@@ -222,9 +222,31 @@ class _RoundHistoryCard extends StatelessWidget {
   }
 
   DataRow _buildRoundRow(BuildContext context, Round round) {
+    final makkerLabel = (round.caller != null && round.partner != null)
+        ? '${round.caller} & ${round.partner}'
+        : round.caller != null
+            ? round.caller!
+            : null;
+
     return DataRow(
       cells: [
-        DataCell(Text('${round.roundNumber}')),
+        DataCell(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('${round.roundNumber}'),
+              if (makkerLabel != null)
+                Text(
+                  makkerLabel,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.black54,
+                  ),
+                ),
+            ],
+          ),
+        ),
         ...gameState.players.map((p) {
           final score = round.scores[p.name] ?? 0;
           return DataCell(

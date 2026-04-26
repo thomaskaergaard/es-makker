@@ -24,9 +24,13 @@ class _GameScreenState extends State<GameScreen> {
     _gameState = widget.gameState;
   }
 
-  void _onRoundSubmitted(Map<String, int> scores) {
+  void _onRoundSubmitted(
+    Map<String, int> scores, {
+    String? caller,
+    String? partner,
+  }) {
     setState(() {
-      _gameState = _gameState.addRound(scores);
+      _gameState = _gameState.addRound(scores, caller: caller, partner: partner);
       _tabIndex = 1; // Switch to scoreboard after adding a round.
     });
   }
