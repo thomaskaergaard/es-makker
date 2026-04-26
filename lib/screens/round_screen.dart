@@ -202,11 +202,9 @@ class _RoundScreenState extends State<RoundScreen> {
                           width: 100,
                           child: TextFormField(
                             controller: _controllers[player.name],
-                            keyboardType: const TextInputType.numberWithOptions(
-                                signed: true),
+                            keyboardType: TextInputType.text,
                             inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                  RegExp(r'^-?\d*')),
+                              _SignedIntegerInputFormatter(),
                             ],
                             textAlign: TextAlign.center,
                             decoration: const InputDecoration(
@@ -340,6 +338,23 @@ class _MakkerSelection extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Input formatter that allows only valid signed integer prefixes:
+/// an optional leading minus followed by zero or more digits.
+class _SignedIntegerInputFormatter extends TextInputFormatter {
+  static final _pattern = RegExp(r'^-?\d*$');
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (_pattern.hasMatch(newValue.text)) {
+      return newValue;
+    }
+    return oldValue;
   }
 }
 
