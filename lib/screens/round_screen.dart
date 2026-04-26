@@ -28,6 +28,11 @@ class _RoundScreenState extends State<RoundScreen> {
   String? _caller;
   String? _partner;
 
+  // Sync state: mirrors the score between caller and partner.
+  String? _syncedCaller;
+  String? _syncedPartner;
+  bool _syncing = false;
+
   @override
   void initState() {
     super.initState();
@@ -40,6 +45,7 @@ class _RoundScreenState extends State<RoundScreen> {
     if (oldWidget.gameState.currentRoundNumber !=
         widget.gameState.currentRoundNumber) {
       // Clear fields when a new round starts.
+      _removeSyncListeners();
       for (final c in _controllers.values) {
         c.text = '';
       }
@@ -58,10 +64,56 @@ class _RoundScreenState extends State<RoundScreen> {
 
   @override
   void dispose() {
+    _removeSyncListeners();
     for (final c in _controllers.values) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  void _onCallerScoreChanged() {
+    if (_syncing || _caller == null || _partner == null) return;
+    _syncing = true;
+    _controllers[_partner]!.text = _controllers[_caller]!.text;
+    _syncing = false;
+  }
+
+  void _onPartnerScoreChanged() {
+    if (_syncing || _caller == null || _partner == null) return;
+    _syncing = true;
+    _controllers[_caller]!.text = _controllers[_partner]!.text;
+    _syncing = false;
+  }
+
+  /// Removes any existing sync listeners and attaches new ones for the current
+  /// caller/partner pair. Also copies the caller's current score to the partner
+  /// immediately when both are set.
+  void _attachSyncListeners() {
+    _removeSyncListeners();
+    if (_caller == null || _partner == null) return;
+
+    // Immediately copy the caller's current value to the partner.
+    // Use the _syncing guard so that adding the partner listener below does
+    // not bounce the value back to the caller.
+    _syncing = true;
+    _controllers[_partner]!.text = _controllers[_caller]!.text;
+    _syncing = false;
+
+    _controllers[_caller]!.addListener(_onCallerScoreChanged);
+    _controllers[_partner]!.addListener(_onPartnerScoreChanged);
+    _syncedCaller = _caller;
+    _syncedPartner = _partner;
+  }
+
+  void _removeSyncListeners() {
+    if (_syncedCaller != null) {
+      _controllers[_syncedCaller]?.removeListener(_onCallerScoreChanged);
+    }
+    if (_syncedPartner != null) {
+      _controllers[_syncedPartner]?.removeListener(_onPartnerScoreChanged);
+    }
+    _syncedCaller = null;
+    _syncedPartner = null;
   }
 
   void _submitRound() {
@@ -134,10 +186,12 @@ class _RoundScreenState extends State<RoundScreen> {
                   } else if (_partner == v) {
                     _partner = null; // same player can't be both
                   }
+                  _attachSyncListeners();
                 }),
                 onPartnerChanged: (v) => setState(() {
                   _partner = v;
                   if (v != null && _caller == v) _caller = null;
+                  _attachSyncListeners();
                 }),
               ),
               const SizedBox(height: 8),
