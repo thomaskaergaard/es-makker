@@ -449,7 +449,7 @@ class _PublicGamesTab extends StatelessWidget {
                     children: [
                       Icon(Icons.search_off,
                           size: 48,
-                          color: theme.colorScheme.onSurface.withAlpha(100)),
+                          color: theme.colorScheme.onSurface.withOpacity(0.39)),
                       const SizedBox(height: 12),
                       Text(
                         'Ingen offentlige spil lige nu.',
@@ -486,7 +486,7 @@ class _PublicGamesTab extends StatelessWidget {
                             ),
                           ),
                           title: Text(
-                            '${s.hostName}\'s spil',
+                            '${s.hostName}s spil',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           subtitle: Text('Rum: ${s.roomCode}'),
