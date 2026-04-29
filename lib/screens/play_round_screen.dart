@@ -81,12 +81,7 @@ class _PlayRoundScreenState extends State<PlayRoundScreen> {
 
     if (widget.isOnline) {
       // Optimistic local update, then sync to Firebase.
-      setState(() {
-        _state = newState;
-        if (!widget.isOnline) {
-          _viewingPlayer = _state.currentPlayerIndex;
-        }
-      });
+      setState(() => _state = newState);
       widget.sessionService!
           .updatePlayState(widget.roomCode!, newState);
     } else {

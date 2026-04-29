@@ -1,4 +1,7 @@
 import 'dart:math';
+// This app is Flutter Web only. dart:html is used for browser localStorage
+// to persist the player ID across sessions. If support for other platforms
+// is needed in the future, replace with the shared_preferences package.
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -80,11 +83,16 @@ class SessionService {
   /// Creates a new session and returns the room code.
   Future<String> createSession(String hostName) async {
     final roomCode = generateRoomCode();
+    final hostPlayer = SessionPlayer(
+      playerId: _playerId,
+      name: hostName,
+      index: 0,
+    );
     await _sessionRef(roomCode).set({
       'phase': 'waiting',
       'hostPlayerId': _playerId,
       'players': {
-        _playerId: {'name': hostName, 'index': 0},
+        _playerId: hostPlayer.toMap(),
       },
       'gameState': null,
       'playState': null,
@@ -109,10 +117,12 @@ class SessionService {
     if (players.containsKey(_playerId)) return true;
 
     final nextIndex = players.length;
-    await ref.child('players/$_playerId').set({
-      'name': playerName,
-      'index': nextIndex,
-    });
+    final newPlayer = SessionPlayer(
+      playerId: _playerId,
+      name: playerName,
+      index: nextIndex,
+    );
+    await ref.child('players/$_playerId').set(newPlayer.toMap());
     return true;
   }
 
@@ -184,6 +194,8 @@ class SessionPlayer {
     required this.name,
     required this.index,
   });
+
+  Map<String, dynamic> toMap() => {'name': name, 'index': index};
 
   factory SessionPlayer.fromMap(String playerId, Map<String, dynamic> data) =>
       SessionPlayer(
