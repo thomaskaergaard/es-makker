@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/game_state.dart';
+import 'deal_screen.dart';
 import 'round_screen.dart';
 import 'rules_screen.dart';
 import 'scoreboard_screen.dart';
@@ -95,6 +96,20 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
+  void _onPlayRound() {
+    final playerNames = _gameState.players.map((p) => p.name).toList();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DealScreen(
+          playerNames: playerNames,
+          onRoundComplete: (scores, {String? caller, String? partner}) {
+            _onRoundSubmitted(scores, caller: caller, partner: partner);
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tabs = [
@@ -148,6 +163,12 @@ class _GameScreenState extends State<GameScreen> {
           ),
           ScoreboardScreen(gameState: _gameState),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _onPlayRound,
+        icon: const Icon(Icons.style),
+        label: const Text('Spil runde'),
+        tooltip: 'Spil en runde med kort',
       ),
     );
   }
