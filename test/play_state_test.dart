@@ -1,6 +1,7 @@
 import 'package:test/test.dart';
 import 'package:es_makker/models/playing_card.dart';
 import 'package:es_makker/models/play_state.dart';
+import 'package:es_makker/models/bid.dart';
 
 void main() {
   group('PlayingCard', () {
@@ -69,6 +70,72 @@ void main() {
       for (final hand in hands) {
         expect(hand.length, 8);
       }
+    });
+
+    group('dealWithMiddle', () {
+      test('4 players: 12 cards each + 4 in middle', () {
+        final result = Deck.dealWithMiddle(4);
+        expect(result.hands.length, 4);
+        for (final hand in result.hands) {
+          expect(hand.length, 12);
+        }
+        expect(result.middle.length, 4);
+      });
+
+      test('5 players: 10 cards each + 2 in middle', () {
+        final result = Deck.dealWithMiddle(5);
+        expect(result.hands.length, 5);
+        for (final hand in result.hands) {
+          expect(hand.length, 10);
+        }
+        expect(result.middle.length, 2);
+      });
+
+      test('6 players: 8 cards each + 4 in middle', () {
+        final result = Deck.dealWithMiddle(6);
+        expect(result.hands.length, 6);
+        for (final hand in result.hands) {
+          expect(hand.length, 8);
+        }
+        expect(result.middle.length, 4);
+      });
+
+      test('total cards equals 52', () {
+        final result = Deck.dealWithMiddle(4);
+        final total = result.hands.fold<int>(
+              0, (sum, h) => sum + h.length) +
+            result.middle.length;
+        expect(total, 52);
+      });
+
+      test('no duplicate cards', () {
+        final result = Deck.dealWithMiddle(4);
+        final all = [
+          ...result.hands.expand((h) => h),
+          ...result.middle,
+        ];
+        final unique = all.toSet();
+        expect(unique.length, 52);
+      });
+
+      test('hands are sorted by suit then rank', () {
+        final result = Deck.dealWithMiddle(4);
+        for (final hand in result.hands) {
+          for (var i = 1; i < hand.length; i++) {
+            final prev = hand[i - 1];
+            final curr = hand[i];
+            final suitCmp =
+                prev.suit.index.compareTo(curr.suit.index);
+            if (suitCmp == 0) {
+              expect(prev.rank.value <= curr.rank.value, isTrue,
+                  reason: 'Hand not sorted by rank within suit');
+            } else {
+              expect(suitCmp <= 0, isTrue,
+                  reason: 'Hand not sorted by suit');
+            }
+          }
+        }
+      });
     });
   });
 
@@ -193,5 +260,128 @@ void main() {
       expect(state.partnerRevealed, isTrue);
       expect(state.partnerIndex, 2);
     });
+
+    group('tricksPerRound with dealWithMiddle hands', () {
+      test('is 12 for 4 players dealt via dealWithMiddle', () {
+        final deal = Deck.dealWithMiddle(4);
+        final state = PlayState.start(
+          playerNames: ['A', 'B', 'C', 'D'],
+          trump: Suit.spades,
+          callerIndex: 0,
+          hands: deal.hands,
+        );
+        expect(state.tricksPerRound, 12);
+      });
+
+      test('remains 12 after playing one full trick', () {
+        final deal = Deck.dealWithMiddle(4);
+        var state = PlayState.start(
+          playerNames: ['A', 'B', 'C', 'D'],
+          trump: Suit.spades,
+          callerIndex: 0,
+          hands: deal.hands,
+        );
+        for (var i = 0; i < 4; i++) {
+          final cp = state.currentPlayerIndex;
+          state = state.playCard(cp, state.validCards().first);
+        }
+        expect(state.tricksPerRound, 12);
+        expect(state.completedTricks.length, 1);
+      });
+
+      test('roundOver is true after 12 tricks', () {
+        final deal = Deck.dealWithMiddle(4);
+        var state = PlayState.start(
+          playerNames: ['A', 'B', 'C', 'D'],
+          trump: Suit.spades,
+          callerIndex: 0,
+          hands: deal.hands,
+        );
+        // Play all 12 tricks
+        for (var trick = 0; trick < 12; trick++) {
+          for (var i = 0; i < 4; i++) {
+            final cp = state.currentPlayerIndex;
+            state = state.playCard(cp, state.validCards().first);
+          }
+        }
+        expect(state.roundOver, isTrue);
+        expect(state.completedTricks.length, 12);
+      });
+    });
+
+    group('bid-based scoring', () {
+      PlayState _buildState(
+          List<List<PlayingCard>> hands, int callerIndex, int partnerIndex,
+          {required Bid bid}) {
+        return PlayState(
+          playerNames: ['A', 'B', 'C', 'D'],
+          hands: hands,
+          trump: Suit.spades,
+          callerIndex: callerIndex,
+          partnerIndex: partnerIndex,
+          currentPlayerIndex: 0,
+          bid: bid,
+        );
+      }
+
+      test('bid made: caller team scores ± contract value', () {
+        // Explicitly set caller=0, partner=2 so teams are balanced (2v2)
+        final deal = Deck.dealWithMiddle(4);
+        var state = PlayState(
+          playerNames: ['A', 'B', 'C', 'D'],
+          hands: deal.hands,
+          trump: Suit.spades,
+          callerIndex: 0,
+          partnerIndex: 2,
+          currentPlayerIndex: 1,
+          bid: const Bid(pointsPerTrick: 2, tricksNeeded: 9),
+        );
+        // play all tricks
+        while (!state.roundOver) {
+          final cp = state.currentPlayerIndex;
+          state = state.playCard(cp, state.validCards().first);
+        }
+        final scores = state.calculateScores();
+        // Contract value = 9 × 2 = 18; all scores are ±18
+        for (final s in scores.values) {
+          expect(s == 18 || s == -18, isTrue);
+        }
+        // A and C (caller+partner) share the same score
+        expect(scores['A'], scores['C']);
+        // B and D (opponents) share the same score
+        expect(scores['B'], scores['D']);
+        // The two teams have opposite scores
+        expect(scores['A'], isNot(scores['B']));
+        // Totals cancel out (2 × 18 + 2 × −18 = 0)
+        final total = scores.values.fold<int>(0, (a, b) => a + b);
+        expect(total, 0);
+      });
+
+      test('bid serialises and deserialises with PlayState', () {
+        final deal = Deck.dealWithMiddle(4);
+        final state = PlayState.start(
+          playerNames: ['A', 'B', 'C', 'D'],
+          trump: Suit.spades,
+          callerIndex: 0,
+          hands: deal.hands,
+          bid: const Bid(pointsPerTrick: 3, tricksNeeded: 10),
+        );
+        final json = state.toJson();
+        final restored = PlayState.fromJson(json);
+        expect(restored.bid, const Bid(pointsPerTrick: 3, tricksNeeded: 10));
+      });
+
+      test('state without bid serialises and deserialises correctly', () {
+        final state = PlayState.start(
+          playerNames: ['A', 'B', 'C', 'D'],
+          trump: Suit.spades,
+          callerIndex: 0,
+        );
+        final json = state.toJson();
+        final restored = PlayState.fromJson(json);
+        expect(restored.bid, isNull);
+      });
+    });
   });
 }
+

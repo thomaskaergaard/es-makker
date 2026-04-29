@@ -1,4 +1,5 @@
 import 'playing_card.dart';
+import 'bid.dart';
 
 /// A single trick: each entry maps a player index to the card they played.
 class Trick {
@@ -64,6 +65,7 @@ class PlayState {
   final Trick currentTrick;
   final int currentPlayerIndex;
   final bool partnerRevealed;
+  final Bid? bid;
 
   const PlayState({
     required this.playerNames,
@@ -76,11 +78,26 @@ class PlayState {
     this.currentTrick = const Trick(),
     required this.currentPlayerIndex,
     this.partnerRevealed = false,
+    this.bid,
   });
 
   int get playerCount => playerNames.length;
   int get totalTricks => hands.isEmpty ? 0 : completedTricks.length + (currentTrick.entries.isEmpty ? 0 : 1);
-  int get tricksPerRound => 52 ~/ playerCount;
+
+  /// Number of tricks in this round, derived from the initial hand size.
+  ///
+  /// Accounts for cards already played (removed from hands) during both
+  /// completed tricks and the current in-progress trick.
+  int get tricksPerRound {
+    if (hands.isEmpty) return 52 ~/ playerCount;
+    // For player 0: initial hand size = remaining cards + completed tricks
+    // + any card already played in the current incomplete trick.
+    final inCurrentTrick = currentTrick.entries
+        .where((e) => e.playerIndex == 0)
+        .length;
+    return hands[0].length + completedTricks.length + inCurrentTrick;
+  }
+
   bool get roundOver => completedTricks.length == tricksPerRound;
 
   /// Whether a player can play a given card.
@@ -147,6 +164,7 @@ class PlayState {
         currentTrick: const Trick(),
         currentPlayerIndex: winnerIdx,
         partnerRevealed: revealed,
+        bid: bid,
       );
     }
 
@@ -163,6 +181,7 @@ class PlayState {
       currentTrick: newTrick,
       currentPlayerIndex: nextPlayer,
       partnerRevealed: revealed,
+      bid: bid,
     );
   }
 
@@ -179,44 +198,67 @@ class PlayState {
     return counts;
   }
 
-  /// Calculate scores: caller+partner get +tricks, opponents get -tricks
-  /// (simplified scoring: each trick = 1 point for the winning side,
-  /// -1 for the losing side).
+  /// Calculate scores based on the bid (if set) or a simple trick-count fallback.
+  ///
+  /// With a bid:
+  /// - Caller's team wins [bid.tricksNeeded] or more tricks → each team member
+  ///   scores `bid.tricksNeeded × bid.pointsPerTrick` (positive).
+  /// - Caller's team wins fewer tricks → each team member scores
+  ///   `-(bid.tricksNeeded × bid.pointsPerTrick)` (negative).
+  /// - Opponents always score the opposite of the caller's team.
+  ///
+  /// Without a bid (legacy / manual-entry mode): caller team wins if they hold
+  /// a majority of tricks; each trick is worth 1 point.
   Map<String, int> calculateScores() {
     final won = tricksWon;
     final callerTeamTricks = (won[callerIndex] ?? 0) +
         (partnerIndex != null ? (won[partnerIndex!] ?? 0) : 0);
     final totalTricksCount = tricksPerRound;
-    final opponentTricks = totalTricksCount - callerTeamTricks;
 
-    // Caller team wins if they got more tricks
-    final callerTeamWon = callerTeamTricks > opponentTricks;
-    final points = callerTeamWon ? callerTeamTricks : -callerTeamTricks;
-    final opponentPoints = -points;
+    final int teamPoints;
+    if (bid != null) {
+      // Bid-based scoring
+      final contractValue = bid!.tricksNeeded * bid!.pointsPerTrick;
+      teamPoints = callerTeamTricks >= bid!.tricksNeeded
+          ? contractValue
+          : -contractValue;
+    } else {
+      // Legacy fallback: majority wins, 1 point per trick
+      final opponentTricks = totalTricksCount - callerTeamTricks;
+      final callerTeamWon = callerTeamTricks > opponentTricks;
+      teamPoints = callerTeamWon ? callerTeamTricks : -callerTeamTricks;
+    }
 
     final scores = <String, int>{};
     for (var i = 0; i < playerCount; i++) {
       final isCallerTeam = i == callerIndex || i == partnerIndex;
-      scores[playerNames[i]] = isCallerTeam ? points : opponentPoints;
+      scores[playerNames[i]] = isCallerTeam ? teamPoints : -teamPoints;
     }
     return scores;
   }
 
   /// Create initial play state from setup.
+  ///
+  /// Optionally accepts [hands] that have been pre-dealt (e.g. after the
+  /// bidding phase). If [hands] is omitted the cards are dealt from a freshly
+  /// shuffled deck via [Deck.deal].
   factory PlayState.start({
     required List<String> playerNames,
     required Suit trump,
     required int callerIndex,
     PlayingCard? calledCard,
+    List<List<PlayingCard>>? hands,
+    Bid? bid,
   }) {
-    final hands = Deck.deal(playerNames.length);
+    final dealtHands = hands ?? Deck.deal(playerNames.length);
     return PlayState(
       playerNames: playerNames,
-      hands: hands,
+      hands: dealtHands,
       trump: trump,
       callerIndex: callerIndex,
       calledCard: calledCard,
       currentPlayerIndex: (callerIndex + 1) % playerNames.length,
+      bid: bid,
     );
   }
 
@@ -234,6 +276,7 @@ class PlayState {
         'currentTrick': currentTrick.toJson(),
         'currentPlayerIndex': currentPlayerIndex,
         'partnerRevealed': partnerRevealed,
+        if (bid != null) 'bid': bid!.toJson(),
       };
 
   factory PlayState.fromJson(Map<String, dynamic> json) => PlayState(
@@ -261,5 +304,8 @@ class PlayState {
             Map<String, dynamic>.from(json['currentTrick'] as Map)),
         currentPlayerIndex: json['currentPlayerIndex'] as int,
         partnerRevealed: json['partnerRevealed'] as bool? ?? false,
+        bid: json['bid'] != null
+            ? Bid.fromJson(Map<String, dynamic>.from(json['bid'] as Map))
+            : null,
       );
 }
