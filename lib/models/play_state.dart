@@ -22,6 +22,16 @@ class Trick {
     }
     return best.playerIndex;
   }
+
+  Map<String, dynamic> toJson() => {
+        'entries': entries.map((e) => e.toJson()).toList(),
+      };
+
+  factory Trick.fromJson(Map<String, dynamic> json) => Trick(
+        entries: (json['entries'] as List)
+            .map((e) => TrickEntry.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+      );
 }
 
 class TrickEntry {
@@ -29,6 +39,17 @@ class TrickEntry {
   final PlayingCard card;
 
   const TrickEntry({required this.playerIndex, required this.card});
+
+  Map<String, dynamic> toJson() => {
+        'playerIndex': playerIndex,
+        'card': card.toJson(),
+      };
+
+  factory TrickEntry.fromJson(Map<String, dynamic> json) => TrickEntry(
+        playerIndex: json['playerIndex'] as int,
+        card: PlayingCard.fromJson(
+            Map<String, dynamic>.from(json['card'] as Map)),
+      );
 }
 
 /// The state of an active card game round.
@@ -198,4 +219,47 @@ class PlayState {
       currentPlayerIndex: (callerIndex + 1) % playerNames.length,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'playerNames': playerNames,
+        'hands': hands
+            .map((h) => h.map((c) => c.toJson()).toList())
+            .toList(),
+        'trump': trump?.name,
+        'callerIndex': callerIndex,
+        'partnerIndex': partnerIndex,
+        'calledCard': calledCard?.toJson(),
+        'completedTricks':
+            completedTricks.map((t) => t.toJson()).toList(),
+        'currentTrick': currentTrick.toJson(),
+        'currentPlayerIndex': currentPlayerIndex,
+        'partnerRevealed': partnerRevealed,
+      };
+
+  factory PlayState.fromJson(Map<String, dynamic> json) => PlayState(
+        playerNames: List<String>.from(json['playerNames'] as List),
+        hands: (json['hands'] as List)
+            .map((h) => (h as List)
+                .map((c) => PlayingCard.fromJson(
+                    Map<String, dynamic>.from(c as Map)))
+                .toList())
+            .toList(),
+        trump: json['trump'] != null
+            ? Suit.values.byName(json['trump'] as String)
+            : null,
+        callerIndex: json['callerIndex'] as int,
+        partnerIndex: json['partnerIndex'] as int?,
+        calledCard: json['calledCard'] != null
+            ? PlayingCard.fromJson(
+                Map<String, dynamic>.from(json['calledCard'] as Map))
+            : null,
+        completedTricks: (json['completedTricks'] as List)
+            .map((t) =>
+                Trick.fromJson(Map<String, dynamic>.from(t as Map)))
+            .toList(),
+        currentTrick: Trick.fromJson(
+            Map<String, dynamic>.from(json['currentTrick'] as Map)),
+        currentPlayerIndex: json['currentPlayerIndex'] as int,
+        partnerRevealed: json['partnerRevealed'] as bool? ?? false,
+      );
 }

@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/game_state.dart';
+import '../models/play_state.dart';
+import '../services/session_service.dart';
 import 'deal_screen.dart';
+import 'play_round_screen.dart';
 import 'round_screen.dart';
 import 'rules_screen.dart';
 import 'scoreboard_screen.dart';
@@ -8,9 +13,24 @@ import 'setup_screen.dart';
 
 /// Main game screen with tabs for [RoundScreen] and [ScoreboardScreen].
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.gameState});
+  const GameScreen({
+    super.key,
+    required this.gameState,
+    this.sessionService,
+    this.roomCode,
+    this.myPlayerIndex,
+  });
 
   final GameState gameState;
+
+  /// Non-null when playing in online mode.
+  final SessionService? sessionService;
+  final String? roomCode;
+
+  /// This device's player index in online mode (null = local / all players).
+  final int? myPlayerIndex;
+
+  bool get isOnline => sessionService != null && roomCode != null;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -19,11 +39,59 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   late GameState _gameState;
   int _tabIndex = 0;
+  StreamSubscription<SessionSnapshot>? _sessionSub;
+  bool _navigatedToPlay = false;
 
   @override
   void initState() {
     super.initState();
     _gameState = widget.gameState;
+    if (widget.isOnline) {
+      _sessionSub = widget.sessionService!
+          .watchSession(widget.roomCode!)
+          .listen(_onSessionUpdate);
+    }
+  }
+
+  @override
+  void dispose() {
+    _sessionSub?.cancel();
+    super.dispose();
+  }
+
+  void _onSessionUpdate(SessionSnapshot snapshot) {
+    if (!mounted) return;
+
+    // Sync game state from Firebase.
+    if (snapshot.gameState != null) {
+      setState(() => _gameState = snapshot.gameState!);
+    }
+
+    // Auto-navigate to PlayRoundScreen when a play round starts.
+    if (snapshot.playState != null && !_navigatedToPlay) {
+      _navigatedToPlay = true;
+      final playState = snapshot.playState!;
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => _buildOnlinePlayRoundScreen(playState),
+            ),
+          )
+          .then((_) => _navigatedToPlay = false);
+    }
+  }
+
+  Widget _buildOnlinePlayRoundScreen(PlayState playState) {
+    return PlayRoundScreen(
+      initialState: playState,
+      onRoundComplete: (scores, {String? caller, String? partner}) {
+        _onRoundSubmitted(scores, caller: caller, partner: partner);
+        widget.sessionService!.endPlayRound(widget.roomCode!);
+      },
+      sessionService: widget.sessionService,
+      roomCode: widget.roomCode,
+      myPlayerIndex: widget.myPlayerIndex,
+    );
   }
 
   void _onRoundSubmitted(
@@ -31,10 +99,15 @@ class _GameScreenState extends State<GameScreen> {
     String? caller,
     String? partner,
   }) {
+    final newState =
+        _gameState.addRound(scores, caller: caller, partner: partner);
     setState(() {
-      _gameState = _gameState.addRound(scores, caller: caller, partner: partner);
-      _tabIndex = 1; // Switch to scoreboard after adding a round.
+      _gameState = newState;
+      _tabIndex = 1;
     });
+    if (widget.isOnline) {
+      widget.sessionService!.updateGameState(widget.roomCode!, newState);
+    }
   }
 
   void _onUndoLastRound() {
@@ -60,9 +133,12 @@ class _GameScreenState extends State<GameScreen> {
       ),
     ).then((confirmed) {
       if (confirmed == true) {
-        setState(() {
-          _gameState = _gameState.undoLastRound();
-        });
+        final newState = _gameState.undoLastRound();
+        setState(() => _gameState = newState);
+        if (widget.isOnline) {
+          widget.sessionService!
+              .updateGameState(widget.roomCode!, newState);
+        }
       }
     });
   }
@@ -89,6 +165,9 @@ class _GameScreenState extends State<GameScreen> {
       ),
     ).then((confirmed) {
       if (confirmed == true && mounted) {
+        if (widget.isOnline) {
+          widget.sessionService!.endSession(widget.roomCode!);
+        }
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const SetupScreen()),
         );
@@ -105,6 +184,9 @@ class _GameScreenState extends State<GameScreen> {
           onRoundComplete: (scores, {String? caller, String? partner}) {
             _onRoundSubmitted(scores, caller: caller, partner: partner);
           },
+          sessionService: widget.sessionService,
+          roomCode: widget.roomCode,
+          myPlayerIndex: widget.myPlayerIndex,
         ),
       ),
     );
@@ -128,7 +210,19 @@ class _GameScreenState extends State<GameScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Es Makker'),
+        title: widget.isOnline
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Es Makker'),
+                  Text(
+                    'Rum: ${widget.roomCode}',
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ],
+              )
+            : const Text('Es Makker'),
         actions: [
           IconButton(
             tooltip: 'Regler',

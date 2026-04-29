@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/game_state.dart';
 import '../models/player.dart';
+import '../services/session_service.dart';
 import 'game_screen.dart';
+import 'lobby_screen.dart';
 import 'rules_screen.dart';
 
 /// First screen – lets users configure the number of players and their names.
@@ -82,6 +84,16 @@ class _SetupScreenState extends State<SetupScreen> {
       appBar: AppBar(
         title: const Text('Es Makker – Opsætning'),
         actions: [
+          IconButton(
+            tooltip: 'Online spil',
+            icon: const Icon(Icons.wifi),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    LobbyScreen(sessionService: SessionService()),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'Regler',
             icon: const Icon(Icons.menu_book_outlined),

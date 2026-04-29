@@ -1,20 +1,40 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/playing_card.dart';
 import '../models/play_state.dart';
+import '../services/session_service.dart';
 import '../theme/app_theme.dart';
 
 /// The main card-playing screen. Displays the current trick, player's hand,
 /// and allows playing cards.
+///
+/// In **online mode** ([sessionService] and [roomCode] are non-null):
+/// - [myPlayerIndex] restricts the view to a single player's hand.
+/// - The [PlayState] is synced via Firebase; any card played by this device
+///   is written to Firebase and all devices receive the update.
 class PlayRoundScreen extends StatefulWidget {
   const PlayRoundScreen({
     super.key,
     required this.initialState,
     required this.onRoundComplete,
+    this.sessionService,
+    this.roomCode,
+    this.myPlayerIndex,
   });
 
   final PlayState initialState;
   final void Function(Map<String, int> scores,
       {String? caller, String? partner}) onRoundComplete;
+
+  /// Non-null when in online mode.
+  final SessionService? sessionService;
+  final String? roomCode;
+
+  /// The index of the player controlling this device. Null = local (all players).
+  final int? myPlayerIndex;
+
+  bool get isOnline => sessionService != null && roomCode != null;
 
   @override
   State<PlayRoundScreen> createState() => _PlayRoundScreenState();
@@ -22,24 +42,56 @@ class PlayRoundScreen extends StatefulWidget {
 
 class _PlayRoundScreenState extends State<PlayRoundScreen> {
   late PlayState _state;
-  int _viewingPlayer = 0; // which player's hand is shown
+  int _viewingPlayer = 0; // which player's hand is shown (local mode only)
+  StreamSubscription<SessionSnapshot>? _sessionSub;
 
   @override
   void initState() {
     super.initState();
     _state = widget.initialState;
-    _viewingPlayer = _state.currentPlayerIndex;
+    if (widget.isOnline) {
+      // In online mode, each player only sees their own hand.
+      _viewingPlayer = widget.myPlayerIndex ?? 0;
+      _sessionSub = widget.sessionService!
+          .watchSession(widget.roomCode!)
+          .listen(_onSessionUpdate);
+    } else {
+      _viewingPlayer = _state.currentPlayerIndex;
+    }
+  }
+
+  @override
+  void dispose() {
+    _sessionSub?.cancel();
+    super.dispose();
+  }
+
+  void _onSessionUpdate(SessionSnapshot snapshot) {
+    if (!mounted) return;
+    if (snapshot.playState != null) {
+      setState(() => _state = snapshot.playState!);
+      if (_state.roundOver) _showRoundResults();
+    }
   }
 
   void _playCard(PlayingCard card) {
     if (!_state.canPlay(_viewingPlayer, card)) return;
 
-    setState(() {
-      _state = _state.playCard(_viewingPlayer, card);
-      _viewingPlayer = _state.currentPlayerIndex;
-    });
+    final newState = _state.playCard(_viewingPlayer, card);
 
-    if (_state.roundOver) {
+    if (widget.isOnline) {
+      // Optimistic local update, then sync to Firebase.
+      setState(() => _state = newState);
+      widget.sessionService!
+          .updatePlayState(widget.roomCode!, newState);
+    } else {
+      setState(() {
+        _state = newState;
+        _viewingPlayer = _state.currentPlayerIndex;
+      });
+    }
+
+    if (newState.roundOver) {
       _showRoundResults();
     }
   }
@@ -129,7 +181,11 @@ class _PlayRoundScreenState extends State<PlayRoundScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentPlayerName = _state.playerNames[_state.currentPlayerIndex];
-    final isCurrentPlayer = _viewingPlayer == _state.currentPlayerIndex;
+    final isMyTurn = _viewingPlayer == _state.currentPlayerIndex;
+
+    // In online mode: only show the current player's own hand.
+    // In local mode: allow switching between all players via tabs.
+    final canSwitchPlayers = !widget.isOnline;
 
     return Scaffold(
       appBar: AppBar(
@@ -151,7 +207,7 @@ class _PlayRoundScreenState extends State<PlayRoundScreen> {
       ),
       body: Column(
         children: [
-          // Player tabs
+          // Player tabs (online: read-only indicator; local: interactive)
           _PlayerTabs(
             playerNames: _state.playerNames,
             currentPlayerIndex: _state.currentPlayerIndex,
@@ -159,7 +215,8 @@ class _PlayRoundScreenState extends State<PlayRoundScreen> {
             tricksWon: _state.tricksWon,
             callerIndex: _state.callerIndex,
             partnerIndex: _state.partnerRevealed ? _state.partnerIndex : null,
-            onPlayerSelected: (i) => setState(() => _viewingPlayer = i),
+            onPlayerSelected:
+                canSwitchPlayers ? (i) => setState(() => _viewingPlayer = i) : null,
           ),
           // Current trick
           _CurrentTrickDisplay(
@@ -174,13 +231,17 @@ class _PlayRoundScreenState extends State<PlayRoundScreen> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: isCurrentPlayer
+            color: isMyTurn
                 ? theme.colorScheme.primaryContainer
                 : Colors.grey.shade200,
             child: Text(
-              isCurrentPlayer
-                  ? '${_state.playerNames[_viewingPlayer]} – din tur! Vælg et kort.'
-                  : 'Venter på $currentPlayerName... (du ser ${_state.playerNames[_viewingPlayer]}s kort)',
+              widget.isOnline
+                  ? (isMyTurn
+                      ? 'Din tur! Vælg et kort.'
+                      : 'Venter på $currentPlayerName…')
+                  : (isMyTurn
+                      ? '${_state.playerNames[_viewingPlayer]} – din tur! Vælg et kort.'
+                      : 'Venter på $currentPlayerName... (du ser ${_state.playerNames[_viewingPlayer]}s kort)'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -191,8 +252,8 @@ class _PlayRoundScreenState extends State<PlayRoundScreen> {
           Expanded(
             child: _HandDisplay(
               hand: _state.hands[_viewingPlayer],
-              validCards: isCurrentPlayer ? _state.validCards() : [],
-              onCardPlayed: isCurrentPlayer ? _playCard : null,
+              validCards: isMyTurn ? _state.validCards() : [],
+              onCardPlayed: isMyTurn ? _playCard : null,
               trump: _state.trump,
             ),
           ),
@@ -220,7 +281,7 @@ class _PlayerTabs extends StatelessWidget {
   final Map<int, int> tricksWon;
   final int callerIndex;
   final int? partnerIndex;
-  final ValueChanged<int> onPlayerSelected;
+  final ValueChanged<int>? onPlayerSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +305,7 @@ class _PlayerTabs extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.only(right: 6),
               child: GestureDetector(
-                onTap: () => onPlayerSelected(i),
+                onTap: onPlayerSelected != null ? () => onPlayerSelected!(i) : null,
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
