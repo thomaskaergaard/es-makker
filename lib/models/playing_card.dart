@@ -92,6 +92,14 @@ class PlayingCard {
   String toString() => shortName;
 }
 
+/// Result of dealing cards with a middle pile (talon/kitty).
+class DealResult {
+  final List<List<PlayingCard>> hands;
+  final List<PlayingCard> middle;
+
+  const DealResult({required this.hands, required this.middle});
+}
+
 /// A standard 52-card deck.
 class Deck {
   Deck._();
@@ -130,5 +138,38 @@ class Deck {
       });
     }
     return hands;
+  }
+
+  /// Number of cards placed in the middle pile (talon) for each player count.
+  static int middleCount(int playerCount) => playerCount == 5 ? 2 : 4;
+
+  /// Deal cards to [playerCount] players with a middle pile (talon/kitty).
+  ///
+  /// Card distribution:
+  /// - 4 players: 12 cards each + 4 middle
+  /// - 5 players: 10 cards each + 2 middle
+  /// - 6 players: 8 cards each + 4 middle
+  ///
+  /// Returns a [DealResult] with the player hands sorted by suit/rank and the
+  /// face-down middle pile.
+  static DealResult dealWithMiddle(int playerCount) {
+    final mc = middleCount(playerCount);
+    final cards = shuffled();
+    final middle = cards.sublist(0, mc);
+    final rest = cards.sublist(mc);
+    final cardsPerPlayer = rest.length ~/ playerCount;
+    final hands = <List<PlayingCard>>[];
+    for (var i = 0; i < playerCount; i++) {
+      final hand = List<PlayingCard>.from(
+        rest.sublist(i * cardsPerPlayer, (i + 1) * cardsPerPlayer),
+      );
+      hand.sort((a, b) {
+        final suitCmp = a.suit.index.compareTo(b.suit.index);
+        if (suitCmp != 0) return suitCmp;
+        return a.rank.value.compareTo(b.rank.value);
+      });
+      hands.add(hand);
+    }
+    return DealResult(hands: hands, middle: middle);
   }
 }
