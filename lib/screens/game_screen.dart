@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/game_state.dart';
 import '../models/play_state.dart';
 import '../services/session_service.dart';
+import '../widgets/connection_banner.dart';
 import 'deal_screen.dart';
 import 'play_round_screen.dart';
 import 'round_screen.dart';
@@ -248,14 +249,22 @@ class _GameScreenState extends State<GameScreen> {
           child: _buildTabBar(tabs),
         ),
       ),
-      body: IndexedStack(
-        index: _tabIndex,
+      body: Column(
         children: [
-          RoundScreen(
-            gameState: _gameState,
-            onRoundSubmitted: _onRoundSubmitted,
+          if (widget.isOnline)
+            ConnectionBanner(sessionService: widget.sessionService!),
+          Expanded(
+            child: IndexedStack(
+              index: _tabIndex,
+              children: [
+                RoundScreen(
+                  gameState: _gameState,
+                  onRoundSubmitted: _onRoundSubmitted,
+                ),
+                ScoreboardScreen(gameState: _gameState),
+              ],
+            ),
           ),
-          ScoreboardScreen(gameState: _gameState),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

@@ -39,6 +39,19 @@ class SessionService {
   String get playerId => _playerId;
 
   // ---------------------------------------------------------------------------
+  // Connection state
+  // ---------------------------------------------------------------------------
+
+  /// Stream that emits `true` when connected to Firebase and `false` when
+  /// disconnected. Useful for showing a banner when the WebSocket drops.
+  Stream<bool> get onConnectionState {
+    return _db
+        .ref('.info/connected')
+        .onValue
+        .map((event) => event.snapshot.value == true);
+  }
+
+  // ---------------------------------------------------------------------------
   // Player identity (persisted in browser localStorage)
   // ---------------------------------------------------------------------------
 
