@@ -28,7 +28,7 @@ class Trick {
       };
 
   factory Trick.fromJson(Map<String, dynamic> json) => Trick(
-        entries: (json['entries'] as List)
+        entries: ((json['entries'] as List?) ?? const [])
             .map((e) => TrickEntry.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
       );
@@ -253,7 +253,7 @@ class PlayState {
             ? PlayingCard.fromJson(
                 Map<String, dynamic>.from(json['calledCard'] as Map))
             : null,
-        completedTricks: (json['completedTricks'] as List)
+        completedTricks: ((json['completedTricks'] as List?) ?? const [])
             .map((t) =>
                 Trick.fromJson(Map<String, dynamic>.from(t as Map)))
             .toList(),
