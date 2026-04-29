@@ -70,6 +70,16 @@ class PlayingCard {
     return false;
   }
 
+  Map<String, dynamic> toJson() => {
+        'suit': suit.name,
+        'rank': rank.name,
+      };
+
+  factory PlayingCard.fromJson(Map<String, dynamic> json) => PlayingCard(
+        suit: Suit.values.byName(json['suit'] as String),
+        rank: Rank.values.byName(json['rank'] as String),
+      );
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

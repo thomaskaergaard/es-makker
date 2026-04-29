@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/playing_card.dart';
 import '../models/play_state.dart';
+import '../services/session_service.dart';
 import 'play_round_screen.dart';
 
 /// Screen where the caller selects trump suit and the card to call for a partner.
@@ -9,11 +10,21 @@ class DealScreen extends StatefulWidget {
     super.key,
     required this.playerNames,
     required this.onRoundComplete,
+    this.sessionService,
+    this.roomCode,
+    this.myPlayerIndex,
   });
 
   final List<String> playerNames;
   final void Function(Map<String, int> scores, {String? caller, String? partner})
       onRoundComplete;
+
+  /// Non-null when in online mode.
+  final SessionService? sessionService;
+  final String? roomCode;
+  final int? myPlayerIndex;
+
+  bool get isOnline => sessionService != null && roomCode != null;
 
   @override
   State<DealScreen> createState() => _DealScreenState();
@@ -32,6 +43,12 @@ class _DealScreenState extends State<DealScreen> {
       calledCard: _calledCard,
     );
 
+    if (widget.isOnline) {
+      // Publish play state to Firebase; all devices will navigate to
+      // PlayRoundScreen via the GameScreen stream listener.
+      widget.sessionService!.startPlayRound(widget.roomCode!, playState);
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlayRoundScreen(
@@ -39,7 +56,13 @@ class _DealScreenState extends State<DealScreen> {
           onRoundComplete: (scores, {String? caller, String? partner}) {
             Navigator.of(context).pop(); // Pop back from DealScreen
             widget.onRoundComplete(scores, caller: caller, partner: partner);
+            if (widget.isOnline) {
+              widget.sessionService!.endPlayRound(widget.roomCode!);
+            }
           },
+          sessionService: widget.sessionService,
+          roomCode: widget.roomCode,
+          myPlayerIndex: widget.myPlayerIndex,
         ),
       ),
     );
