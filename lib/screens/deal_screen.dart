@@ -3,7 +3,6 @@ import '../models/bid.dart';
 import '../models/playing_card.dart';
 import '../models/play_state.dart';
 import '../services/session_service.dart';
-import '../theme/app_theme.dart';
 import 'play_round_screen.dart';
 
 enum _DealPhase { bidding, callerSetup }
