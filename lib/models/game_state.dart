@@ -62,7 +62,7 @@ class GameState {
         players: (json['players'] as List)
             .map((p) => Player.fromJson(p as Map<String, dynamic>))
             .toList(),
-        rounds: (json['rounds'] as List)
+        rounds: ((json['rounds'] as List?) ?? const [])
             .map((r) => Round.fromJson(r as Map<String, dynamic>))
             .toList(),
       );
