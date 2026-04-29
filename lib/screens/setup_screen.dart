@@ -83,6 +83,11 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
+  String _resumeLabel(GameState game) {
+    final names = game.players.map((p) => p.name).join(', ');
+    return 'Fortsæt spil ($names – runde ${game.currentRoundNumber})';
+  }
+
   void _resumeGame() {
     if (_savedGame == null) return;
     Navigator.of(context).pushReplacement(
@@ -221,11 +226,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   OutlinedButton.icon(
                     onPressed: _resumeGame,
                     icon: const Icon(Icons.restore),
-                    label: Text(
-                      'Fortsæt spil '
-                      '(${_savedGame!.players.map((p) => p.name).join(', ')} '
-                      '– runde ${_savedGame!.currentRoundNumber})',
-                    ),
+                    label: Text(_resumeLabel(_savedGame!)),
                   ),
                   const SizedBox(height: 8),
                 ],
