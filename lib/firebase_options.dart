@@ -23,12 +23,13 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'YOUR_API_KEY',
-    appId: 'YOUR_APP_ID',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    databaseURL: 'YOUR_DATABASE_URL',
-    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
-    authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
+    apiKey: 'AIzaSyCr8JXDaEswd-44GiqxztmYQprqstxS_2I',
+    appId: '1:848466218344:web:1257c4fa45c9698b809add',
+    messagingSenderId: '848466218344',
+    projectId: 'es-makker',
+    databaseURL: 'https://es-makker-default-rtdb.europe-west1.firebasedatabase.app',
+    storageBucket: 'es-makker.firebasestorage.app',
+    authDomain: 'es-makker.firebaseapp.com',
+    measurementId: 'G-DG5EBW3ZF9',
   );
 }
