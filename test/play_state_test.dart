@@ -310,20 +310,6 @@ void main() {
     });
 
     group('bid-based scoring', () {
-      PlayState _buildState(
-          List<List<PlayingCard>> hands, int callerIndex, int partnerIndex,
-          {required Bid bid}) {
-        return PlayState(
-          playerNames: ['A', 'B', 'C', 'D'],
-          hands: hands,
-          trump: Suit.spades,
-          callerIndex: callerIndex,
-          partnerIndex: partnerIndex,
-          currentPlayerIndex: 0,
-          bid: bid,
-        );
-      }
-
       test('bid made: caller team scores ± contract value', () {
         // Explicitly set caller=0, partner=2 so teams are balanced (2v2)
         final deal = Deck.dealWithMiddle(4);

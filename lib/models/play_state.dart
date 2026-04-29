@@ -89,7 +89,7 @@ class PlayState {
   /// Accounts for cards already played (removed from hands) during both
   /// completed tricks and the current in-progress trick.
   int get tricksPerRound {
-    if (hands.isEmpty) return 52 ~/ playerCount;
+    if (hands.isEmpty) return 52 ~/ playerCount; // 52 = standard deck size
     // For player 0: initial hand size = remaining cards + completed tricks
     // + any card already played in the current incomplete trick.
     final inCurrentTrick = currentTrick.entries

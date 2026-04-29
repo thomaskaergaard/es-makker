@@ -653,7 +653,7 @@ class _CallerSetupPhase extends StatelessWidget {
         ElevatedButton.icon(
           onPressed: onStart,
           icon: const Icon(Icons.play_arrow),
-          label: const Text('Del kort og spil'),
+          label: const Text('Begynd runde'),
         ),
       ],
     );
