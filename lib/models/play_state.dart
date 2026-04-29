@@ -218,7 +218,11 @@ class PlayState {
     final int teamPoints;
     if (bid != null) {
       // Bid-based scoring
-      final contractValue = bid!.tricksNeeded * bid!.pointsPerTrick;
+      int contractValue = bid!.tricksNeeded * bid!.pointsPerTrick;
+      // 10-bids: stik is twice as expensive
+      if (bid!.tricksNeeded == 10) contractValue *= 2;
+      // Klør (clubs) trump: double price
+      if (trump == Suit.clubs) contractValue *= 2;
       teamPoints = callerTeamTricks >= bid!.tricksNeeded
           ? contractValue
           : -contractValue;

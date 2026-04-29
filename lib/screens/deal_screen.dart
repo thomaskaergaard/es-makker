@@ -1,3 +1,5 @@
+import 'dart:math' show min;
+
 import 'package:flutter/material.dart';
 import '../models/bid.dart';
 import '../models/playing_card.dart';
@@ -57,6 +59,10 @@ class _DealScreenState extends State<DealScreen> {
   int _callerIndex = 0;
   Suit _trump = Suit.spades;
   PlayingCard? _calledCard;
+
+  /// How many talon cards are currently revealed in the caller-setup phase.
+  /// For 2-point bids with a large enough talon, starts at 2 and can grow.
+  int _talonRevealCount = 0;
 
   @override
   void initState() {
@@ -130,6 +136,36 @@ class _DealScreenState extends State<DealScreen> {
     _trump = Suit.spades;
     _calledCard = null;
     _phase = _DealPhase.callerSetup;
+    final talonLength = _deal.middle.length;
+    // For 2-point bids with more than 2 talon cards, apply the progressive
+    // reveal mechanic (stik cost increases as more cards are peeked at).
+    if (_highestBid!.pointsPerTrick == 2 && talonLength > 2) {
+      _talonRevealCount = 2;
+    } else {
+      _talonRevealCount = talonLength;
+    }
+  }
+
+  /// Reveals one additional talon card and bumps the stik cost accordingly.
+  ///
+  /// The initial bid always starts at pointsPerTrick == 2 when this mechanic
+  /// is active, and _talonRevealCount starts at 2.  Each subsequent reveal
+  /// adds one card and one point per trick:
+  ///   reveal-count 2 → pointsPerTrick 2 (initial)
+  ///   reveal-count 3 → pointsPerTrick 3
+  ///   reveal-count 4 → pointsPerTrick 4
+  /// Using reveal-count directly as pointsPerTrick is correct because they
+  /// are always in sync after the initial state is set in _finishBidding.
+  void _onRevealNextTalonCard() {
+    setState(() {
+      _talonRevealCount =
+          min(_talonRevealCount + 1, _deal.middle.length);
+      // pointsPerTrick == _talonRevealCount (see comment above)
+      _highestBid = Bid(
+        tricksNeeded: _highestBid!.tricksNeeded,
+        pointsPerTrick: _talonRevealCount,
+      );
+    });
   }
 
   void _showReDealSnackBar() {
@@ -206,11 +242,16 @@ class _DealScreenState extends State<DealScreen> {
                   bid: _highestBid!,
                   callerHand: _deal.hands[_callerIndex],
                   talon: _deal.middle,
+                  talonRevealCount: _talonRevealCount,
                   trump: _trump,
                   calledCard: _calledCard,
                   onTrumpChanged: (suit) => setState(() => _trump = suit),
                   onCalledCardChanged: (card) =>
                       setState(() => _calledCard = card),
+                  onRevealNextCard:
+                      _talonRevealCount < _deal.middle.length
+                          ? _onRevealNextTalonCard
+                          : null,
                   onStart: _startRound,
                 ),
         ),
@@ -448,10 +489,12 @@ class _CallerSetupPhase extends StatelessWidget {
     required this.bid,
     required this.callerHand,
     required this.talon,
+    required this.talonRevealCount,
     required this.trump,
     required this.calledCard,
     required this.onTrumpChanged,
     required this.onCalledCardChanged,
+    required this.onRevealNextCard,
     required this.onStart,
   });
 
@@ -460,16 +503,33 @@ class _CallerSetupPhase extends StatelessWidget {
   final Bid bid;
   final List<PlayingCard> callerHand;
   final List<PlayingCard> talon;
+
+  /// How many talon cards are currently visible to the caller.
+  final int talonRevealCount;
+
   final Suit trump;
   final PlayingCard? calledCard;
   final ValueChanged<Suit> onTrumpChanged;
   final ValueChanged<PlayingCard?> onCalledCardChanged;
+
+  /// Called when the caller wants to peek at the next hidden talon card.
+  /// `null` when all talon cards are already revealed.
+  final VoidCallback? onRevealNextCard;
+
   final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final callerName = playerNames[callerIndex];
+
+    // Compute the effective per-trick value for the *next* reveal step,
+    // taking the 10-bid and clubs-trump multipliers into account so the
+    // player sees the real cost before committing to see another card.
+    final nextBasePointsPerTrick = bid.pointsPerTrick + 1;
+    final nextEffective = nextBasePointsPerTrick *
+        (bid.tricksNeeded == 10 ? 2 : 1) *
+        (trump == Suit.clubs ? 2 : 1);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -495,7 +555,9 @@ class _CallerSetupPhase extends StatelessWidget {
                       ),
                       Text(
                         'Bud: ${bid.label}  –  ${bid.tricksNeeded} stik krævet, '
-                        '${bid.pointsPerTrick} point pr. stik',
+                        '${bid.pointsPerTrick} point pr. stik'
+                        '${bid.tricksNeeded == 10 ? ' (×2 for 10-bud)' : ''}'
+                        '${trump == Suit.clubs ? ' (×2 for klør)' : ''}',
                         style: theme.textTheme.bodySmall,
                       ),
                     ],
@@ -519,7 +581,7 @@ class _CallerSetupPhase extends StatelessWidget {
                     Icon(Icons.layers, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
                     Text(
-                      'Talon (${talon.length} kort)',
+                      'Talon ($talonRevealCount/${talon.length} synlige)',
                       style: theme.textTheme.titleSmall
                           ?.copyWith(fontWeight: FontWeight.bold),
                     ),
@@ -532,13 +594,48 @@ class _CallerSetupPhase extends StatelessWidget {
                       ?.copyWith(color: Colors.black54),
                 ),
                 const SizedBox(height: 12),
+                // Show only the currently revealed talon cards
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: talon
+                      .take(talonRevealCount)
                       .map((card) => _CardTile(card: card, trump: trump))
                       .toList(),
                 ),
+                // Hidden cards indicator
+                if (talonRevealCount < talon.length) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: List.generate(
+                      talon.length - talonRevealCount,
+                      (_) => Container(
+                        width: 44,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.blueGrey.shade100,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.blueGrey.shade300),
+                        ),
+                        child: Icon(Icons.help_outline,
+                            color: Colors.blueGrey.shade400),
+                      ),
+                    ),
+                  ),
+                ],
+                // Reveal-next button (only when mechanic is active)
+                if (onRevealNextCard != null) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: onRevealNextCard,
+                    icon: const Icon(Icons.visibility, size: 18),
+                    label: Text(
+                      'Se næste skjulte kort'
+                      ' (stik koster $nextEffective)',
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

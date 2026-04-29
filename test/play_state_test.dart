@@ -343,6 +343,78 @@ void main() {
         expect(total, 0);
       });
 
+      test('10-bid doubles the contract value', () {
+        final deal = Deck.dealWithMiddle(4);
+        var state = PlayState(
+          playerNames: ['A', 'B', 'C', 'D'],
+          hands: deal.hands,
+          trump: Suit.spades,
+          callerIndex: 0,
+          partnerIndex: 2,
+          currentPlayerIndex: 1,
+          bid: const Bid(pointsPerTrick: 2, tricksNeeded: 10),
+        );
+        while (!state.roundOver) {
+          final cp = state.currentPlayerIndex;
+          state = state.playCard(cp, state.validCards().first);
+        }
+        final scores = state.calculateScores();
+        // Contract value = 10 × 2 × 2 (10-bid multiplier) = 40
+        for (final s in scores.values) {
+          expect(s == 40 || s == -40, isTrue);
+        }
+        final total = scores.values.fold<int>(0, (a, b) => a + b);
+        expect(total, 0);
+      });
+
+      test('clubs trump doubles the contract value', () {
+        final deal = Deck.dealWithMiddle(4);
+        var state = PlayState(
+          playerNames: ['A', 'B', 'C', 'D'],
+          hands: deal.hands,
+          trump: Suit.clubs, // klør
+          callerIndex: 0,
+          partnerIndex: 2,
+          currentPlayerIndex: 1,
+          bid: const Bid(pointsPerTrick: 2, tricksNeeded: 9),
+        );
+        while (!state.roundOver) {
+          final cp = state.currentPlayerIndex;
+          state = state.playCard(cp, state.validCards().first);
+        }
+        final scores = state.calculateScores();
+        // Contract value = 9 × 2 × 2 (clubs multiplier) = 36
+        for (final s in scores.values) {
+          expect(s == 36 || s == -36, isTrue);
+        }
+        final total = scores.values.fold<int>(0, (a, b) => a + b);
+        expect(total, 0);
+      });
+
+      test('10-bid with clubs trump applies both multipliers', () {
+        final deal = Deck.dealWithMiddle(4);
+        var state = PlayState(
+          playerNames: ['A', 'B', 'C', 'D'],
+          hands: deal.hands,
+          trump: Suit.clubs, // klør
+          callerIndex: 0,
+          partnerIndex: 2,
+          currentPlayerIndex: 1,
+          bid: const Bid(pointsPerTrick: 2, tricksNeeded: 10),
+        );
+        while (!state.roundOver) {
+          final cp = state.currentPlayerIndex;
+          state = state.playCard(cp, state.validCards().first);
+        }
+        final scores = state.calculateScores();
+        // Contract value = 10 × 2 × 2 (10-bid) × 2 (clubs) = 80
+        for (final s in scores.values) {
+          expect(s == 80 || s == -80, isTrue);
+        }
+        final total = scores.values.fold<int>(0, (a, b) => a + b);
+        expect(total, 0);
+      });
+
       test('bid serialises and deserialises with PlayState', () {
         final deal = Deck.dealWithMiddle(4);
         final state = PlayState.start(
