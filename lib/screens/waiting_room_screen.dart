@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/session_service.dart';
+import '../widgets/connection_banner.dart';
 import 'game_screen.dart';
 
 /// Screen shown while waiting for all players to join before the game starts.
@@ -66,7 +67,10 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
       appBar: AppBar(
         title: const Text('Venter på spillere'),
       ),
-      body: StreamBuilder<SessionSnapshot>(
+      body: Column(
+        children: [
+          ConnectionBanner(sessionService: widget.sessionService),
+          Expanded(child: StreamBuilder<SessionSnapshot>(
         stream: widget.sessionService.watchSession(widget.roomCode),
         builder: (context, snap) {
           if (snap.hasError) {
@@ -268,6 +272,8 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
             ),
           );
         },
+      )),
+        ],
       ),
     );
   }
