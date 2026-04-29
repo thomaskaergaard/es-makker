@@ -18,17 +18,20 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   final _createNameController = TextEditingController(text: 'Spiller 1');
   final _createFormKey = GlobalKey<FormState>();
+  bool _isPublic = false;
 
   final _joinNameController = TextEditingController(text: 'Spiller');
   final _joinCodeController = TextEditingController();
   final _joinFormKey = GlobalKey<FormState>();
+
+  final _browseNameController = TextEditingController(text: 'Spiller');
 
   bool _loading = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -37,6 +40,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     _createNameController.dispose();
     _joinNameController.dispose();
     _joinCodeController.dispose();
+    _browseNameController.dispose();
     super.dispose();
   }
 
@@ -44,8 +48,10 @@ class _LobbyScreenState extends State<LobbyScreen>
     if (!_createFormKey.currentState!.validate()) return;
     setState(() => _loading = true);
     try {
-      final roomCode = await widget.sessionService
-          .createSession(_createNameController.text.trim());
+      final roomCode = await widget.sessionService.createSession(
+        _createNameController.text.trim(),
+        isPublic: _isPublic,
+      );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -98,6 +104,38 @@ class _LobbyScreenState extends State<LobbyScreen>
     );
   }
 
+  Future<void> _joinPublicGame(String roomCode) async {
+    final playerName = _browseNameController.text.trim();
+    if (playerName.isEmpty) {
+      _showError('Angiv dit navn for at deltage.');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final ok =
+          await widget.sessionService.joinSession(roomCode, playerName);
+      if (!mounted) return;
+      if (!ok) {
+        _showError(
+            'Rummet "$roomCode" blev ikke fundet eller er allerede startet.');
+        return;
+      }
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => WaitingRoomScreen(
+            sessionService: widget.sessionService,
+            roomCode: roomCode,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Kunne ikke deltage. Tjek din internetforbindelse.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -113,6 +151,7 @@ class _LobbyScreenState extends State<LobbyScreen>
           tabs: const [
             Tab(icon: Icon(Icons.add_circle_outline), text: 'Opret spil'),
             Tab(icon: Icon(Icons.login), text: 'Deltag i spil'),
+            Tab(icon: Icon(Icons.public), text: 'Offentlige spil'),
           ],
         ),
       ),
@@ -129,12 +168,20 @@ class _LobbyScreenState extends State<LobbyScreen>
                       nameController: _createNameController,
                       onSubmit: _createGame,
                       theme: theme,
+                      isPublic: _isPublic,
+                      onPublicChanged: (v) => setState(() => _isPublic = v),
                     ),
                     _JoinTab(
                       formKey: _joinFormKey,
                       nameController: _joinNameController,
                       codeController: _joinCodeController,
                       onSubmit: _joinGame,
+                      theme: theme,
+                    ),
+                    _PublicGamesTab(
+                      sessionService: widget.sessionService,
+                      nameController: _browseNameController,
+                      onJoin: _joinPublicGame,
                       theme: theme,
                     ),
                   ],
@@ -151,12 +198,16 @@ class _CreateTab extends StatelessWidget {
     required this.nameController,
     required this.onSubmit,
     required this.theme,
+    required this.isPublic,
+    required this.onPublicChanged,
   });
 
   final GlobalKey<FormState> formKey;
   final TextEditingController nameController;
   final VoidCallback onSubmit;
   final ThemeData theme;
+  final bool isPublic;
+  final ValueChanged<bool> onPublicChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -200,6 +251,17 @@ class _CreateTab extends StatelessWidget {
                       if (v.trim().length > 30) return 'Navn er for langt';
                       return null;
                     },
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Offentligt spil'),
+                    subtitle: const Text(
+                      'Andre spillere kan finde og deltage i dit spil '
+                      'uden at kende rumkoden.',
+                    ),
+                    value: isPublic,
+                    onChanged: onPublicChanged,
                   ),
                 ],
               ),
@@ -307,6 +369,138 @@ class _JoinTab extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PublicGamesTab extends StatelessWidget {
+  const _PublicGamesTab({
+    required this.sessionService,
+    required this.nameController,
+    required this.onJoin,
+    required this.theme,
+  });
+
+  final SessionService sessionService;
+  final TextEditingController nameController;
+  final void Function(String roomCode) onJoin;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const SizedBox(height: 16),
+        Icon(Icons.public, size: 64, color: theme.colorScheme.primary),
+        const SizedBox(height: 16),
+        Text(
+          'Find et offentligt spil og deltag uden rumkode.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Dit navn',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Navn',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Tilgængelige spil',
+          style:
+              theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        StreamBuilder<List<PublicSessionInfo>>(
+          stream: sessionService.watchPublicSessions(),
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return Center(child: Text('Fejl: ${snap.error}'));
+            }
+            if (!snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final sessions = snap.data!;
+            if (sessions.isEmpty) {
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Icon(Icons.search_off,
+                          size: 48,
+                          color: theme.colorScheme.onSurface.withOpacity(0.39)),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Ingen offentlige spil lige nu.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: Colors.black54),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Opret et offentligt spil, eller prøv igen senere.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: Colors.black38),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return Column(
+              children: sessions
+                  .map((s) => Card(
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            child: Text(
+                              s.hostName.isNotEmpty
+                                  ? s.hostName[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(
+                                color: theme.colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            '${s.hostName}s spil',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text('Rum: ${s.roomCode}'),
+                          trailing: FilledButton(
+                            onPressed: () => onJoin(s.roomCode),
+                            child: const Text('Deltag'),
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            );
+          },
+        ),
+      ],
     );
   }
 }

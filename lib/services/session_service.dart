@@ -18,12 +18,18 @@ import '../models/player.dart';
 /// {
 ///   "phase": "waiting" | "playing" | "finished",
 ///   "hostPlayerId": "...",
+///   "isPublic": true | false,
 ///   "players": {
 ///     "{playerId}": { "name": "Alice", "index": 0 }
 ///   },
 ///   "gameState": { ...serialized GameState... },
 ///   "playState": { ...serialized PlayState... } | null
 /// }
+/// ```
+///
+/// Public sessions are also indexed at `public_sessions/{roomCode}`:
+/// ```
+/// { "hostName": "Alice", "createdAt": <server timestamp> }
 /// ```
 class SessionService {
   static const _playerIdKey = 'es_makker_player_id';
@@ -89,12 +95,18 @@ class SessionService {
   DatabaseReference _sessionRef(String roomCode) =>
       _db.ref('sessions/$roomCode');
 
+  DatabaseReference _publicSessionRef(String roomCode) =>
+      _db.ref('public_sessions/$roomCode');
+
   // ---------------------------------------------------------------------------
   // Session lifecycle
   // ---------------------------------------------------------------------------
 
   /// Creates a new session and returns the room code.
-  Future<String> createSession(String hostName) async {
+  ///
+  /// When [isPublic] is `true` the session is also listed under
+  /// `public_sessions/` so other players can discover and join it.
+  Future<String> createSession(String hostName, {bool isPublic = false}) async {
     final roomCode = generateRoomCode();
     final hostPlayer = SessionPlayer(
       playerId: _playerId,
@@ -104,12 +116,22 @@ class SessionService {
     await _sessionRef(roomCode).set({
       'phase': 'waiting',
       'hostPlayerId': _playerId,
+      'isPublic': isPublic,
       'players': {
         _playerId: hostPlayer.toMap(),
       },
       'gameState': null,
       'playState': null,
     });
+    if (isPublic) {
+      final publicRef = _publicSessionRef(roomCode);
+      await publicRef.set({
+        'hostName': hostName,
+        'createdAt': ServerValue.timestamp,
+      });
+      // Remove from the public listing if the host's browser disconnects.
+      publicRef.onDisconnect().remove();
+    }
     return roomCode;
   }
 
@@ -149,6 +171,8 @@ class SessionService {
       'phase': 'playing',
       'gameState': gameState.toJson(),
     });
+    // Remove from public listing when the game begins.
+    await _publicSessionRef(roomCode).remove();
   }
 
   /// Pushes an updated [GameState] (e.g. after a round score is submitted).
@@ -174,6 +198,7 @@ class SessionService {
   /// Marks the session as finished.
   Future<void> endSession(String roomCode) async {
     await _sessionRef(roomCode).update({'phase': 'finished'});
+    await _publicSessionRef(roomCode).remove();
   }
 
   // ---------------------------------------------------------------------------
@@ -189,6 +214,25 @@ class SessionService {
       final data =
           Map<String, dynamic>.from(event.snapshot.value as Map);
       return SessionSnapshot.fromMap(roomCode, _playerId, data);
+    });
+  }
+
+  /// Returns a live stream of publicly discoverable sessions that are still
+  /// in the "waiting" phase.
+  Stream<List<PublicSessionInfo>> watchPublicSessions() {
+    return _db.ref('public_sessions').onValue.map((event) {
+      if (!event.snapshot.exists || event.snapshot.value == null) return [];
+      final data =
+          Map<String, dynamic>.from(event.snapshot.value as Map);
+      final list = data.entries
+          .map((e) => PublicSessionInfo.fromMap(
+                e.key,
+                Map<String, dynamic>.from(e.value as Map),
+              ))
+          .toList();
+      // Show most recently created sessions first.
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return list;
     });
   }
 }
@@ -225,6 +269,7 @@ class SessionSnapshot {
   final String myPlayerId;
   final Map<String, SessionPlayer> players;
   final String phase;
+  final bool isPublic;
   final GameState? gameState;
   final PlayState? playState;
 
@@ -235,6 +280,7 @@ class SessionSnapshot {
     required this.myPlayerId,
     this.players = const {},
     this.phase = 'waiting',
+    this.isPublic = false,
     this.gameState,
     this.playState,
   });
@@ -292,8 +338,34 @@ class SessionSnapshot {
       myPlayerId: myPlayerId,
       players: players,
       phase: data['phase'] as String? ?? 'waiting',
+      isPublic: data['isPublic'] as bool? ?? false,
       gameState: gameState,
       playState: playState,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// PublicSessionInfo
+// ---------------------------------------------------------------------------
+
+/// Summary of a publicly listed session, read from `public_sessions/`.
+class PublicSessionInfo {
+  final String roomCode;
+  final String hostName;
+  final int createdAt;
+
+  const PublicSessionInfo({
+    required this.roomCode,
+    required this.hostName,
+    required this.createdAt,
+  });
+
+  factory PublicSessionInfo.fromMap(
+          String roomCode, Map<String, dynamic> data) =>
+      PublicSessionInfo(
+        roomCode: roomCode,
+        hostName: data['hostName'] as String? ?? 'Ukendt',
+        createdAt: (data['createdAt'] as num?)?.toInt() ?? 0,
+      );
 }

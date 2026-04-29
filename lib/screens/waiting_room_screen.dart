@@ -148,6 +148,22 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                             style: theme.textTheme.bodySmall
                                 ?.copyWith(color: Colors.black54),
                           ),
+                          if (session.isPublic) ...[
+                            const SizedBox(height: 8),
+                            Chip(
+                              avatar: const Icon(Icons.public, size: 16),
+                              label: const Text('Offentligt spil'),
+                              labelStyle: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSecondaryContainer,
+                              ),
+                              backgroundColor:
+                                  theme.colorScheme.secondaryContainer,
+                              padding: EdgeInsets.zero,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ],
                         ],
                       ),
                     ),
