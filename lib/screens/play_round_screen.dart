@@ -387,6 +387,7 @@ class _MiniCard extends StatelessWidget {
             boxShadow: const [
               BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(1, 1)),
             ],
+
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

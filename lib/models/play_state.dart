@@ -6,7 +6,7 @@ class Trick {
 
   const Trick({this.entries = const []});
 
-  bool get isComplete => entries.isNotEmpty;
+  bool get hasEntries => entries.isNotEmpty;
   Suit? get leadSuit => entries.isNotEmpty ? entries.first.card.suit : null;
 
   Trick addEntry(TrickEntry entry) =>
