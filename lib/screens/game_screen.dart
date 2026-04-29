@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/game_state.dart';
 import '../models/play_state.dart';
+import '../services/local_storage_service.dart';
 import '../services/session_service.dart';
 import '../widgets/connection_banner.dart';
 import 'deal_screen.dart';
@@ -42,6 +43,7 @@ class _GameScreenState extends State<GameScreen> {
   int _tabIndex = 0;
   StreamSubscription<SessionSnapshot>? _sessionSub;
   bool _navigatedToPlay = false;
+  final _localStorage = LocalStorageService();
 
   @override
   void initState() {
@@ -108,6 +110,8 @@ class _GameScreenState extends State<GameScreen> {
     });
     if (widget.isOnline) {
       widget.sessionService!.updateGameState(widget.roomCode!, newState);
+    } else {
+      _localStorage.saveGameState(newState);
     }
   }
 
@@ -139,6 +143,8 @@ class _GameScreenState extends State<GameScreen> {
         if (widget.isOnline) {
           widget.sessionService!
               .updateGameState(widget.roomCode!, newState);
+        } else {
+          _localStorage.saveGameState(newState);
         }
       }
     });
@@ -168,6 +174,8 @@ class _GameScreenState extends State<GameScreen> {
       if (confirmed == true && mounted) {
         if (widget.isOnline) {
           widget.sessionService!.endSession(widget.roomCode!);
+        } else {
+          _localStorage.clearGameState();
         }
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const SetupScreen()),

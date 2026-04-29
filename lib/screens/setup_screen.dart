@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/game_state.dart';
 import '../models/player.dart';
+import '../services/local_storage_service.dart';
 import '../services/session_service.dart';
 import 'game_screen.dart';
 import 'lobby_screen.dart';
@@ -21,10 +22,13 @@ class _SetupScreenState extends State<SetupScreen> {
   int _playerCount = 4;
   final List<TextEditingController> _nameControllers = [];
   final _formKey = GlobalKey<FormState>();
+  final _localStorage = LocalStorageService();
+  GameState? _savedGame;
 
   @override
   void initState() {
     super.initState();
+    _savedGame = _localStorage.loadGameState();
     _updateControllers(_playerCount);
   }
 
@@ -67,11 +71,23 @@ class _SetupScreenState extends State<SetupScreen> {
       return;
     }
 
+    // Clear any previously saved local game before starting a new one.
+    _localStorage.clearGameState();
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => GameScreen(
           gameState: GameState(players: players),
         ),
+      ),
+    );
+  }
+
+  void _resumeGame() {
+    if (_savedGame == null) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => GameScreen(gameState: _savedGame!),
       ),
     );
   }
@@ -201,10 +217,22 @@ class _SetupScreenState extends State<SetupScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
+                if (_savedGame != null) ...[
+                  OutlinedButton.icon(
+                    onPressed: _resumeGame,
+                    icon: const Icon(Icons.restore),
+                    label: Text(
+                      'Fortsæt spil '
+                      '(${_savedGame!.players.map((p) => p.name).join(', ')} '
+                      '– runde ${_savedGame!.currentRoundNumber})',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 ElevatedButton.icon(
                   onPressed: _startGame,
                   icon: const Icon(Icons.play_arrow),
-                  label: const Text('Start spil'),
+                  label: const Text('Start nyt spil'),
                 ),
               ],
             ),
