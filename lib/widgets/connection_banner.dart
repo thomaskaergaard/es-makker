@@ -26,7 +26,7 @@ class ConnectionBanner extends StatelessWidget {
             'Ingen forbindelse – forsøger at genoprette…',
             style: TextStyle(color: Colors.white),
           ),
-          actions: const [SizedBox.shrink()],
+          actions: const [],
         );
       },
     );
