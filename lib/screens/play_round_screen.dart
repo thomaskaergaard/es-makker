@@ -104,6 +104,12 @@ class _PlayRoundScreenState extends State<PlayRoundScreen> {
         : null;
     final won = _state.tricksWon;
 
+    // Pre-compute the combined trick total for the caller's team.
+    final callerTeamTricks = (won[_state.callerIndex] ?? 0) +
+        (_state.partnerIndex != null
+            ? (won[_state.partnerIndex!] ?? 0)
+            : 0);
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -126,7 +132,13 @@ class _PlayRoundScreenState extends State<PlayRoundScreen> {
                 ),
               const Divider(),
               ...scores.entries.map((e) {
-                final tricks = won[_state.playerNames.indexOf(e.key)] ?? 0;
+                final playerIndex = _state.playerNames.indexOf(e.key);
+                final isCallerTeam = playerIndex == _state.callerIndex ||
+                    playerIndex == _state.partnerIndex;
+                // Caller-team members share the combined trick count so both
+                // partners see the same total (which determines the bid result).
+                final tricks =
+                    isCallerTeam ? callerTeamTricks : (won[playerIndex] ?? 0);
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
@@ -286,6 +298,11 @@ class _PlayerTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // Combine caller+partner tricks so both teammates see the shared team total.
+    final callerTeamTricks = (tricksWon[callerIndex] ?? 0) +
+        (partnerIndex != null ? (tricksWon[partnerIndex!] ?? 0) : 0);
+
     return Container(
       color: theme.colorScheme.surface,
       child: SingleChildScrollView(
@@ -297,10 +314,16 @@ class _PlayerTabs extends StatelessWidget {
             final isViewing = i == viewingPlayer;
             final isCaller = i == callerIndex;
             final isPartner = i == partnerIndex;
+            final isCallerTeam = isCaller || isPartner;
 
             String label = playerNames[i];
             if (isCaller) label += ' ⭐';
             if (isPartner) label += ' 🤝';
+
+            // Caller-team members share the combined trick count;
+            // opponents show their own individual count.
+            final displayTricks =
+                isCallerTeam ? callerTeamTricks : (tricksWon[i] ?? 0);
 
             return Padding(
               padding: const EdgeInsets.only(right: 6),
@@ -333,7 +356,7 @@ class _PlayerTabs extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${tricksWon[i] ?? 0} stik',
+                        '$displayTricks stik',
                         style: TextStyle(
                           color: isViewing
                               ? Colors.white70
