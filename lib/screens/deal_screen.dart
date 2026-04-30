@@ -66,6 +66,9 @@ class _DealScreenState extends State<DealScreen> {
   /// For 2-point bids with a large enough talon, starts at 2 and can grow.
   int _talonRevealCount = 0;
 
+  /// Cards the caller has selected to discard (taken from the combined hand).
+  Set<PlayingCard> _discardedCards = {};
+
   // ── Online mode ────────────────────────────────────────────────────────────
   StreamSubscription<SessionSnapshot>? _sessionSub;
   bool _navigatedToPlay = false;
@@ -110,6 +113,7 @@ class _DealScreenState extends State<DealScreen> {
         _trump = ds.trump;
         _calledCard = ds.calledCard;
         _talonRevealCount = ds.talonRevealCount;
+        _discardedCards = ds.discardedCards.toSet();
       });
     }
 
@@ -220,6 +224,7 @@ class _DealScreenState extends State<DealScreen> {
     _callerIndex = winnerIndex;
     _trump = Suit.spades;
     _calledCard = null;
+    _discardedCards = {};
     _phase = _DealPhase.callerSetup;
     final talonLength = _deal.middle.length;
     // For 2-point bids with more than 2 talon cards, apply the progressive
@@ -278,6 +283,7 @@ class _DealScreenState extends State<DealScreen> {
       trumpName: _trump.name,
       calledCard: _calledCard,
       talonRevealCount: _talonRevealCount,
+      discardedCards: _discardedCards.toList(),
     );
     widget.sessionService!.updateDealState(widget.roomCode!, dealState);
   }
@@ -290,15 +296,64 @@ class _DealScreenState extends State<DealScreen> {
   bool get _isMeCaller =>
       !widget.isOnline || widget.myPlayerIndex == _callerIndex;
 
+  // ── Discard helpers ────────────────────────────────────────────────────────
+
+  /// The caller's combined hand after taking the talon.
+  List<PlayingCard> get _combinedCallerHand => [
+        ..._deal.hands[_callerIndex],
+        ..._deal.middle,
+      ];
+
+  /// Whether the caller is rænonce (void in at least one suit) after taking
+  /// the talon, which allows discarding one extra card.
+  bool get _isRaenonce => Suit.values.any(
+        (suit) => _combinedCallerHand.every((c) => c.suit != suit),
+      );
+
+  /// Number of cards the caller must discard: talon size (+1 if rænonce).
+  int get _requiredDiscardCount =>
+      _isRaenonce ? _deal.middle.length + 1 : _deal.middle.length;
+
+  /// Toggles a card in the discard selection set.
+  void _onDiscardToggled(PlayingCard card) {
+    setState(() {
+      if (_discardedCards.contains(card)) {
+        _discardedCards.remove(card);
+      } else if (_discardedCards.length < _requiredDiscardCount) {
+        _discardedCards.add(card);
+      }
+    });
+    _syncDealState();
+  }
+
   // ── Start round ────────────────────────────────────────────────────────────
 
   void _startRound() {
+    // Merge talon into the caller's hand then remove the selected discards.
+    final callerHandWithTalon = List<PlayingCard>.from([
+      ..._deal.hands[_callerIndex],
+      ..._deal.middle,
+    ]);
+    callerHandWithTalon.removeWhere((c) => _discardedCards.contains(c));
+    callerHandWithTalon.sort((a, b) {
+      final suitCmp = a.suit.index.compareTo(b.suit.index);
+      if (suitCmp != 0) return suitCmp;
+      return a.rank.value.compareTo(b.rank.value);
+    });
+
+    final updatedHands = [
+      for (var i = 0; i < _deal.hands.length; i++)
+        i == _callerIndex
+            ? callerHandWithTalon
+            : List<PlayingCard>.from(_deal.hands[i]),
+    ];
+
     final playState = PlayState.start(
       playerNames: widget.playerNames,
       trump: _trump,
       callerIndex: _callerIndex,
       calledCard: _calledCard,
-      hands: _deal.hands,
+      hands: updatedHands,
       bid: _highestBid,
     );
 
@@ -371,6 +426,7 @@ class _DealScreenState extends State<DealScreen> {
                       talonRevealCount: _talonRevealCount,
                       trump: _trump,
                       calledCard: _calledCard,
+                      discardedCards: _discardedCards,
                       onTrumpChanged: (suit) {
                         setState(() => _trump = suit);
                         _syncDealState();
@@ -383,6 +439,7 @@ class _DealScreenState extends State<DealScreen> {
                           _talonRevealCount < _deal.middle.length
                               ? _onRevealNextTalonCard
                               : null,
+                      onDiscardToggled: _onDiscardToggled,
                       onStart: _startRound,
                     )
                   : _WaitingForCallerSetup(
@@ -711,9 +768,11 @@ class _CallerSetupPhase extends StatelessWidget {
     required this.talonRevealCount,
     required this.trump,
     required this.calledCard,
+    required this.discardedCards,
     required this.onTrumpChanged,
     required this.onCalledCardChanged,
     required this.onRevealNextCard,
+    required this.onDiscardToggled,
     required this.onStart,
   });
 
@@ -728,6 +787,10 @@ class _CallerSetupPhase extends StatelessWidget {
 
   final Suit trump;
   final PlayingCard? calledCard;
+
+  /// Cards the caller has currently selected to discard.
+  final Set<PlayingCard> discardedCards;
+
   final ValueChanged<Suit> onTrumpChanged;
   final ValueChanged<PlayingCard?> onCalledCardChanged;
 
@@ -735,7 +798,19 @@ class _CallerSetupPhase extends StatelessWidget {
   /// `null` when all talon cards are already revealed.
   final VoidCallback? onRevealNextCard;
 
+  /// Called when a card in the combined hand is tapped for discard selection.
+  final ValueChanged<PlayingCard> onDiscardToggled;
+
   final VoidCallback onStart;
+
+  /// Whether the caller is rænonce (void in any suit) in their combined hand.
+  bool get _isRaenonce {
+    final combined = [...callerHand, ...talon];
+    return Suit.values.any((suit) => combined.every((c) => c.suit != suit));
+  }
+
+  int get _requiredDiscardCount =>
+      _isRaenonce ? talon.length + 1 : talon.length;
 
   @override
   Widget build(BuildContext context) {
@@ -861,7 +936,7 @@ class _CallerSetupPhase extends StatelessWidget {
         ),
         const SizedBox(height: 8),
 
-        // ── Caller's hand ────────────────────────────────────────────────────
+        // ── Combined hand – discard selection ───────────────────────────────
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -870,17 +945,52 @@ class _CallerSetupPhase extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.style, color: theme.colorScheme.primary),
+                    Icon(Icons.delete_outline,
+                        color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
-                    Text(
-                      '$callerName – din hånd',
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                    Expanded(
+                      child: Text(
+                        'Fravalg  (${discardedCards.length} / $_requiredDiscardCount)',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
                     ),
+                    if (_isRaenonce)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.shade400),
+                        ),
+                        child: Text(
+                          'Rænonce +1',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange.shade900,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tryk på $_requiredDiscardCount kort du vil fravælge '
+                  '(din hånd + talon kombineret)',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.black54),
+                ),
                 const SizedBox(height: 12),
-                _HandReadOnly(hand: callerHand, trump: trump),
+                _DiscardableHand(
+                  callerHand: callerHand,
+                  talon: talon,
+                  talonRevealCount: talonRevealCount,
+                  discardedCards: discardedCards,
+                  trump: trump,
+                  onTap: onDiscardToggled,
+                ),
               ],
             ),
           ),
@@ -966,7 +1076,9 @@ class _CallerSetupPhase extends StatelessWidget {
         const SizedBox(height: 24),
 
         ElevatedButton.icon(
-          onPressed: onStart,
+          onPressed: discardedCards.length == _requiredDiscardCount
+              ? onStart
+              : null,
           icon: const Icon(Icons.play_arrow),
           label: const Text('Begynd runde'),
         ),
@@ -1088,12 +1200,38 @@ class _WaitingForCallerSetup extends StatelessWidget {
 // Reusable card-display widgets
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Displays a hand of cards grouped by suit (read-only, no interaction).
-class _HandReadOnly extends StatelessWidget {
-  const _HandReadOnly({required this.hand, this.trump});
+/// Metadata attached to each card in the discard-selection hand view.
+class _CardEntry {
+  const _CardEntry({
+    required this.card,
+    required this.fromTalon,
+    required this.revealed,
+  });
+  final PlayingCard card;
+  final bool fromTalon;
+  final bool revealed;
+}
 
-  final List<PlayingCard> hand;
-  final Suit? trump;
+/// Shows the caller's combined hand (original cards + talon) grouped by suit.
+/// Each card can be tapped to select or deselect it for discard.
+/// Talon cards that have not yet been revealed are shown face-down but
+/// are still selectable so the caller may discard without looking.
+class _DiscardableHand extends StatelessWidget {
+  const _DiscardableHand({
+    required this.callerHand,
+    required this.talon,
+    required this.talonRevealCount,
+    required this.discardedCards,
+    required this.trump,
+    required this.onTap,
+  });
+
+  final List<PlayingCard> callerHand;
+  final List<PlayingCard> talon;
+  final int talonRevealCount;
+  final Set<PlayingCard> discardedCards;
+  final Suit trump;
+  final ValueChanged<PlayingCard> onTap;
 
   Color _suitColor(Suit suit) =>
       (suit == Suit.hearts || suit == Suit.diamonds)
@@ -1102,21 +1240,33 @@ class _HandReadOnly extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (hand.isEmpty) {
+    // Group all cards (hand + talon) by suit for a tidy layout.
+    final bySuit = <Suit, List<_CardEntry>>{};
+    for (final card in callerHand) {
+      bySuit
+          .putIfAbsent(card.suit, () => [])
+          .add(_CardEntry(card: card, fromTalon: false, revealed: true));
+    }
+    for (var i = 0; i < talon.length; i++) {
+      final card = talon[i];
+      final revealed = i < talonRevealCount;
+      bySuit
+          .putIfAbsent(card.suit, () => [])
+          .add(_CardEntry(card: card, fromTalon: true, revealed: revealed));
+    }
+
+    if (bySuit.isEmpty) {
       return const Text('Ingen kort',
           style: TextStyle(color: Colors.black54));
     }
-    final bySuit = <Suit, List<PlayingCard>>{};
-    for (final card in hand) {
-      bySuit.putIfAbsent(card.suit, () => []).add(card);
-    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: bySuit.entries.map((entry) {
         final suit = entry.key;
         final isTrump = trump == suit;
         return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1139,8 +1289,7 @@ class _HandReadOnly extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.amber.shade100,
                           borderRadius: BorderRadius.circular(4),
-                          border:
-                              Border.all(color: Colors.amber.shade700),
+                          border: Border.all(color: Colors.amber.shade700),
                         ),
                         child: Text(
                           'TRUMF',
@@ -1158,8 +1307,192 @@ class _HandReadOnly extends StatelessWidget {
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
+                children: entry.value.map((entry) {
+                  final card = entry.card;
+                  final selected = discardedCards.contains(card);
+                  final revealed = entry.revealed;
+                  return GestureDetector(
+                    onTap: () => onTap(card),
+                    child: _DiscardableCardTile(
+                      card: card,
+                      trump: trump,
+                      selected: selected,
+                      revealed: revealed,
+                      fromTalon: entry.fromTalon,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+/// A card tile that can be selected (for discard) or shown face-down.
+class _DiscardableCardTile extends StatelessWidget {
+  const _DiscardableCardTile({
+    required this.card,
+    required this.trump,
+    required this.selected,
+    required this.revealed,
+    required this.fromTalon,
+  });
+
+  final PlayingCard card;
+  final Suit trump;
+  final bool selected;
+
+  /// Whether the card face is visible (talon cards start hidden).
+  final bool revealed;
+
+  /// Whether this card came from the talon (shown with a subtle badge).
+  final bool fromTalon;
+
+  Color _suitColor(Suit suit) =>
+      (suit == Suit.hearts || suit == Suit.diamonds)
+          ? Colors.red.shade700
+          : Colors.black87;
+
+  @override
+  Widget build(BuildContext context) {
+    final isTrump = card.suit == trump;
+    Color borderColor;
+    double borderWidth;
+    if (selected) {
+      borderColor = Colors.red.shade600;
+      borderWidth = 2.5;
+    } else if (isTrump) {
+      borderColor = Colors.amber.shade700;
+      borderWidth = 2;
+    } else {
+      borderColor = Colors.grey.shade400;
+      borderWidth = 1;
+    }
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Opacity(
+          opacity: selected ? 0.45 : 1.0,
+          child: Container(
+            width: 44,
+            height: 60,
+            decoration: BoxDecoration(
+              color: revealed ? Colors.white : Colors.blueGrey.shade100,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: borderColor, width: borderWidth),
+              boxShadow: const [
+                BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 2,
+                    offset: Offset(1, 1)),
+              ],
+            ),
+            child: revealed
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        card.rank.label,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: _suitColor(card.suit),
+                        ),
+                      ),
+                      Text(
+                        card.suit.symbol,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: _suitColor(card.suit),
+                        ),
+                      ),
+                    ],
+                  )
+                : Icon(Icons.help_outline,
+                    color: Colors.blueGrey.shade400),
+          ),
+        ),
+        // "Talon" badge in top-right corner
+        if (fromTalon)
+          Positioned(
+            top: -5,
+            right: -5,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade600,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'T',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        // "Discard" overlay indicator
+        if (selected)
+          Positioned.fill(
+            child: Center(
+              child: Icon(Icons.close,
+                  color: Colors.red.shade700, size: 28),
+            ),
+          ),
+      ],
+    );
+  }
+}
+/// Displays a hand of cards grouped by suit (read-only, no interaction).
+class _HandReadOnly extends StatelessWidget {
+  const _HandReadOnly({required this.hand});
+
+  final List<PlayingCard> hand;
+
+  Color _suitColor(Suit suit) =>
+      (suit == Suit.hearts || suit == Suit.diamonds)
+          ? Colors.red.shade700
+          : Colors.black87;
+
+  @override
+  Widget build(BuildContext context) {
+    if (hand.isEmpty) {
+      return const Text('Ingen kort',
+          style: TextStyle(color: Colors.black54));
+    }
+    final bySuit = <Suit, List<PlayingCard>>{};
+    for (final card in hand) {
+      bySuit.putIfAbsent(card.suit, () => []).add(card);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: bySuit.entries.map((entry) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${entry.key.symbol} ${entry.key.danishName}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: _suitColor(entry.key),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
                 children: entry.value
-                    .map((card) => _CardTile(card: card, trump: trump))
+                    .map((card) => _CardTile(card: card))
                     .toList(),
               ),
             ],

@@ -40,6 +40,10 @@ class DealState {
   /// How many talon cards are currently revealed to the caller.
   final int talonRevealCount;
 
+  /// Cards the caller has chosen to discard (from the combined hand after
+  /// taking the talon).  Empty until the discard selection is made.
+  final List<PlayingCard> discardedCards;
+
   const DealState({
     required this.hands,
     required this.talon,
@@ -52,6 +56,7 @@ class DealState {
     this.trumpName = 'spades',
     this.calledCard,
     this.talonRevealCount = 0,
+    this.discardedCards = const [],
   });
 
   Suit get trump {
@@ -76,6 +81,7 @@ class DealState {
         'trumpName': trumpName,
         'calledCard': calledCard?.toJson(),
         'talonRevealCount': talonRevealCount,
+        'discardedCards': discardedCards.map((c) => c.toJson()).toList(),
       };
 
   factory DealState.fromJson(Map<String, dynamic> json) => DealState(
@@ -104,5 +110,11 @@ class DealState {
                 Map<String, dynamic>.from(json['calledCard'] as Map))
             : null,
         talonRevealCount: json['talonRevealCount'] as int? ?? 0,
+        discardedCards: json['discardedCards'] != null
+            ? firebaseToList(json['discardedCards'])
+                .map((c) => PlayingCard.fromJson(
+                    Map<String, dynamic>.from(c as Map)))
+                .toList()
+            : const [],
       );
 }

@@ -307,6 +307,61 @@ void main() {
         expect(state.roundOver, isTrue);
         expect(state.completedTricks.length, 12);
       });
+
+      test(
+          'tricksPerRound is 11 when caller (non-zero index) has one fewer card '
+          '(rænonce discard)', () {
+        // Simulate 4 players where caller (index 1) has 11 cards (rænonce
+        // discard) while the others have 12.
+        final deal = Deck.dealWithMiddle(4);
+        final callerHandMinus1 = deal.hands[1].sublist(0, 11);
+        final hands = [
+          deal.hands[0], // 12 cards
+          callerHandMinus1, // 11 cards (caller, rænonce)
+          deal.hands[2], // 12 cards
+          deal.hands[3], // 12 cards
+        ];
+        final state = PlayState(
+          playerNames: ['A', 'B', 'C', 'D'],
+          hands: hands,
+          trump: Suit.spades,
+          callerIndex: 1,
+          currentPlayerIndex: 2,
+        );
+        expect(state.tricksPerRound, 11);
+      });
+
+      test('roundOver after 11 tricks when caller has 11 cards (rænonce)', () {
+        final deal = Deck.dealWithMiddle(4);
+        final callerHandMinus1 = deal.hands[1].sublist(0, 11);
+        final hands = [
+          deal.hands[0],
+          callerHandMinus1,
+          deal.hands[2],
+          deal.hands[3],
+        ];
+        var state = PlayState(
+          playerNames: ['A', 'B', 'C', 'D'],
+          hands: hands,
+          trump: Suit.spades,
+          callerIndex: 1,
+          currentPlayerIndex: 0,
+        );
+        // Play 11 full tricks
+        for (var trick = 0; trick < 11; trick++) {
+          for (var i = 0; i < 4; i++) {
+            final cp = state.currentPlayerIndex;
+            state = state.playCard(cp, state.validCards().first);
+          }
+        }
+        expect(state.roundOver, isTrue);
+        expect(state.completedTricks.length, 11);
+        // Player 0, 2, 3 each have one unplayed card left
+        expect(state.hands[0].length, 1);
+        expect(state.hands[2].length, 1);
+        expect(state.hands[3].length, 1);
+        expect(state.hands[1].length, 0); // caller used all cards
+      });
     });
 
     group('bid-based scoring', () {
