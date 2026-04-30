@@ -1,5 +1,6 @@
-import 'playing_card.dart';
 import 'bid.dart';
+import 'firebase_list_helper.dart';
+import 'playing_card.dart';
 
 /// A single trick: each entry maps a player index to the card they played.
 class Trick {
@@ -29,7 +30,7 @@ class Trick {
       };
 
   factory Trick.fromJson(Map<String, dynamic> json) => Trick(
-        entries: ((json['entries'] as List?) ?? const [])
+        entries: firebaseToList(json['entries'])
             .map((e) => TrickEntry.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
       );
@@ -284,9 +285,9 @@ class PlayState {
       };
 
   factory PlayState.fromJson(Map<String, dynamic> json) => PlayState(
-        playerNames: List<String>.from(json['playerNames'] as List),
-        hands: (json['hands'] as List)
-            .map((h) => (h as List)
+        playerNames: List<String>.from(firebaseToList(json['playerNames'])),
+        hands: firebaseToList(json['hands'])
+            .map((h) => firebaseToList(h)
                 .map((c) => PlayingCard.fromJson(
                     Map<String, dynamic>.from(c as Map)))
                 .toList())
@@ -300,7 +301,7 @@ class PlayState {
             ? PlayingCard.fromJson(
                 Map<String, dynamic>.from(json['calledCard'] as Map))
             : null,
-        completedTricks: ((json['completedTricks'] as List?) ?? const [])
+        completedTricks: firebaseToList(json['completedTricks'])
             .map((t) =>
                 Trick.fromJson(Map<String, dynamic>.from(t as Map)))
             .toList(),
