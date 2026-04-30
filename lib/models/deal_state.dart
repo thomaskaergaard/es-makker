@@ -54,7 +54,13 @@ class DealState {
     this.talonRevealCount = 0,
   });
 
-  Suit get trump => Suit.values.byName(trumpName);
+  Suit get trump {
+    try {
+      return Suit.values.byName(trumpName);
+    } catch (_) {
+      return Suit.spades;
+    }
+  }
 
   Map<String, dynamic> toJson() => {
         'hands': hands
