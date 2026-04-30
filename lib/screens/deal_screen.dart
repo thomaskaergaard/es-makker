@@ -229,6 +229,7 @@ class _DealScreenState extends State<DealScreen> {
               ? _BiddingPhase(
                   playerNames: widget.playerNames,
                   hands: _deal.hands,
+                  talon: _deal.middle,
                   currentBidderIndex: _currentBidderIndex,
                   highestBid: _highestBid,
                   highestBidderIndex: _highestBidderIndex,
@@ -268,6 +269,7 @@ class _BiddingPhase extends StatelessWidget {
   const _BiddingPhase({
     required this.playerNames,
     required this.hands,
+    required this.talon,
     required this.currentBidderIndex,
     required this.highestBid,
     required this.highestBidderIndex,
@@ -278,6 +280,7 @@ class _BiddingPhase extends StatelessWidget {
 
   final List<String> playerNames;
   final List<List<PlayingCard>> hands;
+  final List<PlayingCard> talon;
   final int currentBidderIndex;
   final Bid? highestBid;
   final int? highestBidderIndex;
@@ -390,6 +393,54 @@ class _BiddingPhase extends StatelessWidget {
                   ],
                 );
               }),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // ── Talon (face-down) ────────────────────────────────────────────────
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.layers, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Talon (${talon.length} kort)',
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Talonén er skjult under opbuddet',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: List.generate(
+                    talon.length,
+                    (_) => Container(
+                      width: 44,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.shade100,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.blueGrey.shade300),
+                      ),
+                      child: Icon(Icons.help_outline,
+                          color: Colors.blueGrey.shade400),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
