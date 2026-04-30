@@ -89,14 +89,30 @@ class PlayState {
   ///
   /// Accounts for cards already played (removed from hands) during both
   /// completed tricks and the current in-progress trick.
+  ///
+  /// Uses the *minimum* initial hand size across all players so that a caller
+  /// who discarded an extra card (rænonce rule) does not cause an off-by-one.
   int get tricksPerRound {
     if (hands.isEmpty) return 52 ~/ playerCount; // 52 = standard deck size
-    // For player 0: initial hand size = remaining cards + completed tricks
-    // + any card already played in the current incomplete trick.
-    final inCurrentTrick = currentTrick.entries
-        .where((e) => e.playerIndex == 0)
-        .length;
-    return hands[0].length + completedTricks.length + inCurrentTrick;
+    // Compute each player's initial hand size and return the minimum.
+    // initial_size_i = remaining_cards + completed_tricks
+    //                  + (1 if player i already played in the current trick)
+    // Pre-compute the set of players who have already played in the current
+    // trick so we only scan the entries list once.
+    final playedInCurrent = <int>{};
+    for (final e in currentTrick.entries) {
+      playedInCurrent.add(e.playerIndex);
+    }
+    var minInitial = hands[0].length +
+        completedTricks.length +
+        (playedInCurrent.contains(0) ? 1 : 0);
+    for (var i = 1; i < playerCount; i++) {
+      final initial = hands[i].length +
+          completedTricks.length +
+          (playedInCurrent.contains(i) ? 1 : 0);
+      if (initial < minInitial) minInitial = initial;
+    }
+    return minInitial;
   }
 
   bool get roundOver => completedTricks.length == tricksPerRound;
