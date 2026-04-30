@@ -1,5 +1,6 @@
-import 'playing_card.dart';
 import 'bid.dart';
+import 'firebase_list_helper.dart';
+import 'playing_card.dart';
 
 /// A single trick: each entry maps a player index to the card they played.
 class Trick {
@@ -29,23 +30,10 @@ class Trick {
       };
 
   factory Trick.fromJson(Map<String, dynamic> json) => Trick(
-        entries: _toList(json['entries'])
+        entries: firebaseToList(json['entries'])
             .map((e) => TrickEntry.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
       );
-
-  /// Firebase Realtime Database stores JSON arrays as maps with sequential
-  /// integer keys. This helper converts such maps back to a [List].
-  static List<dynamic> _toList(dynamic value) {
-    if (value == null) return const [];
-    if (value is List) return value;
-    if (value is Map) {
-      final sorted = value.entries.toList()
-        ..sort((a, b) => (a.key as int).compareTo(b.key as int));
-      return sorted.map((e) => e.value).toList();
-    }
-    return const [];
-  }
 }
 
 class TrickEntry {
@@ -297,9 +285,9 @@ class PlayState {
       };
 
   factory PlayState.fromJson(Map<String, dynamic> json) => PlayState(
-        playerNames: List<String>.from(_toList(json['playerNames'])),
-        hands: _toList(json['hands'])
-            .map((h) => _toList(h)
+        playerNames: List<String>.from(firebaseToList(json['playerNames'])),
+        hands: firebaseToList(json['hands'])
+            .map((h) => firebaseToList(h)
                 .map((c) => PlayingCard.fromJson(
                     Map<String, dynamic>.from(c as Map)))
                 .toList())
@@ -313,7 +301,7 @@ class PlayState {
             ? PlayingCard.fromJson(
                 Map<String, dynamic>.from(json['calledCard'] as Map))
             : null,
-        completedTricks: _toList(json['completedTricks'])
+        completedTricks: firebaseToList(json['completedTricks'])
             .map((t) =>
                 Trick.fromJson(Map<String, dynamic>.from(t as Map)))
             .toList(),
@@ -325,17 +313,4 @@ class PlayState {
             ? Bid.fromJson(Map<String, dynamic>.from(json['bid'] as Map))
             : null,
       );
-
-  /// Firebase Realtime Database stores JSON arrays as maps with sequential
-  /// integer keys. This helper converts such maps back to a [List].
-  static List<dynamic> _toList(dynamic value) {
-    if (value == null) return const [];
-    if (value is List) return value;
-    if (value is Map) {
-      final sorted = value.entries.toList()
-        ..sort((a, b) => (a.key as int).compareTo(b.key as int));
-      return sorted.map((e) => e.value).toList();
-    }
-    return const [];
-  }
 }

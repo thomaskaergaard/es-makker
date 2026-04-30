@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'firebase_list_helper.dart';
 import 'player.dart';
 import 'round.dart';
 
@@ -59,27 +60,13 @@ class GameState {
       };
 
   factory GameState.fromJson(Map<String, dynamic> json) => GameState(
-        players: _toList(json['players'])
+        players: firebaseToList(json['players'])
             .map((p) => Player.fromJson(Map<String, dynamic>.from(p as Map)))
             .toList(),
-        rounds: _toList(json['rounds'])
+        rounds: firebaseToList(json['rounds'])
             .map((r) => Round.fromJson(Map<String, dynamic>.from(r as Map)))
             .toList(),
       );
-
-  /// Firebase Realtime Database stores JSON arrays as maps with sequential
-  /// integer keys (e.g. `{0: {...}, 1: {...}}`). This helper converts such
-  /// maps back to a [List] while also handling normal [List] values and nulls.
-  static List<dynamic> _toList(dynamic value) {
-    if (value == null) return const [];
-    if (value is List) return value;
-    if (value is Map) {
-      final sorted = value.entries.toList()
-        ..sort((a, b) => (a.key as int).compareTo(b.key as int));
-      return sorted.map((e) => e.value).toList();
-    }
-    return const [];
-  }
 
   String toJsonString() => jsonEncode(toJson());
 
