@@ -54,6 +54,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
           sessionService: widget.sessionService,
           roomCode: widget.roomCode,
           myPlayerIndex: myPlayerIndex,
+          isHost: snapshot.isHost,
         ),
       ),
     );
