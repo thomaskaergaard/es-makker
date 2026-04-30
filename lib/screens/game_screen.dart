@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../models/deal_state.dart';
 import '../models/game_state.dart';
 import '../models/play_state.dart';
+import '../models/playing_card.dart';
 import '../services/local_storage_service.dart';
 import '../services/session_service.dart';
 import '../widgets/connection_banner.dart';
@@ -21,6 +23,7 @@ class GameScreen extends StatefulWidget {
     this.sessionService,
     this.roomCode,
     this.myPlayerIndex,
+    this.isHost = false,
   });
 
   final GameState gameState;
@@ -31,6 +34,9 @@ class GameScreen extends StatefulWidget {
 
   /// This device's player index in online mode (null = local / all players).
   final int? myPlayerIndex;
+
+  /// Whether this device is the host of the session.
+  final bool isHost;
 
   bool get isOnline => sessionService != null && roomCode != null;
 
@@ -43,6 +49,7 @@ class _GameScreenState extends State<GameScreen> {
   int _tabIndex = 0;
   StreamSubscription<SessionSnapshot>? _sessionSub;
   bool _navigatedToPlay = false;
+  bool _navigatedToDeal = false;
   final _localStorage = LocalStorageService();
 
   @override
@@ -70,8 +77,35 @@ class _GameScreenState extends State<GameScreen> {
       setState(() => _gameState = snapshot.gameState!);
     }
 
+    // Auto-navigate to DealScreen when a deal/bidding phase starts.
+    if (snapshot.dealState != null && !_navigatedToDeal && !_navigatedToPlay) {
+      _navigatedToDeal = true;
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => DealScreen(
+                playerNames:
+                    _gameState.players.map((p) => p.name).toList(),
+                onRoundComplete:
+                    (scores, {String? caller, String? partner}) {
+                  _onRoundSubmitted(scores,
+                      caller: caller, partner: partner);
+                },
+                sessionService: widget.sessionService,
+                roomCode: widget.roomCode,
+                myPlayerIndex: widget.myPlayerIndex,
+              ),
+            ),
+          )
+          .then((_) => _navigatedToDeal = false);
+    }
+
     // Auto-navigate to PlayRoundScreen when a play round starts.
-    if (snapshot.playState != null && !_navigatedToPlay) {
+    // Skip if we're already in the deal screen (the deal screen handles
+    // the transition to PlayRoundScreen itself).
+    if (snapshot.playState != null &&
+        !_navigatedToPlay &&
+        !_navigatedToDeal) {
       _navigatedToPlay = true;
       final playState = snapshot.playState!;
       Navigator.of(context)
@@ -186,19 +220,34 @@ class _GameScreenState extends State<GameScreen> {
 
   void _onPlayRound() {
     final playerNames = _gameState.players.map((p) => p.name).toList();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => DealScreen(
-          playerNames: playerNames,
-          onRoundComplete: (scores, {String? caller, String? partner}) {
-            _onRoundSubmitted(scores, caller: caller, partner: partner);
-          },
-          sessionService: widget.sessionService,
-          roomCode: widget.roomCode,
-          myPlayerIndex: widget.myPlayerIndex,
+
+    if (widget.isOnline) {
+      // In online mode, write the deal to Firebase so all players see it.
+      final deal = Deck.dealWithMiddle(playerNames.length);
+      final dealState = DealState(
+        hands: deal.hands,
+        talon: deal.middle,
+        phase: 'bidding',
+        currentBidderIndex: 0,
+        passed: List.filled(playerNames.length, false),
+      );
+      widget.sessionService!.startDeal(widget.roomCode!, dealState);
+      // Navigation happens via _onSessionUpdate when dealState appears.
+    } else {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DealScreen(
+            playerNames: playerNames,
+            onRoundComplete: (scores, {String? caller, String? partner}) {
+              _onRoundSubmitted(scores, caller: caller, partner: partner);
+            },
+            sessionService: widget.sessionService,
+            roomCode: widget.roomCode,
+            myPlayerIndex: widget.myPlayerIndex,
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   @override
@@ -275,12 +324,14 @@ class _GameScreenState extends State<GameScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _onPlayRound,
-        icon: const Icon(Icons.style),
-        label: const Text('Spil runde'),
-        tooltip: 'Spil en runde med kort',
-      ),
+      floatingActionButton: (!widget.isOnline || widget.isHost)
+          ? FloatingActionButton.extended(
+              onPressed: _onPlayRound,
+              icon: const Icon(Icons.style),
+              label: const Text('Spil runde'),
+              tooltip: 'Spil en runde med kort',
+            )
+          : null,
     );
   }
 

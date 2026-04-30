@@ -7,6 +7,7 @@ import 'dart:html' as html;
 
 import 'package:firebase_database/firebase_database.dart';
 
+import '../models/deal_state.dart';
 import '../models/game_state.dart';
 import '../models/play_state.dart';
 import '../models/player.dart';
@@ -180,6 +181,21 @@ class SessionService {
     await _sessionRef(roomCode).child('gameState').set(gameState.toJson());
   }
 
+  /// Writes an initial [DealState] to start the dealing/bidding phase.
+  Future<void> startDeal(String roomCode, DealState dealState) async {
+    await _sessionRef(roomCode).child('dealState').set(dealState.toJson());
+  }
+
+  /// Updates the [DealState] (e.g. after a bid or trump selection).
+  Future<void> updateDealState(String roomCode, DealState dealState) async {
+    await _sessionRef(roomCode).child('dealState').set(dealState.toJson());
+  }
+
+  /// Clears the [DealState] when dealing/bidding finishes.
+  Future<void> endDeal(String roomCode) async {
+    await _sessionRef(roomCode).child('dealState').set(null);
+  }
+
   /// Writes an initial [PlayState] to start a card-play round.
   Future<void> startPlayRound(String roomCode, PlayState playState) async {
     await _sessionRef(roomCode).child('playState').set(playState.toJson());
@@ -272,6 +288,7 @@ class SessionSnapshot {
   final bool isPublic;
   final GameState? gameState;
   final PlayState? playState;
+  final DealState? dealState;
 
   const SessionSnapshot({
     required this.exists,
@@ -283,6 +300,7 @@ class SessionSnapshot {
     this.isPublic = false,
     this.gameState,
     this.playState,
+    this.dealState,
   });
 
   factory SessionSnapshot.notFound({required String myPlayerId}) =>
@@ -331,6 +349,14 @@ class SessionSnapshot {
       } catch (_) {}
     }
 
+    DealState? dealState;
+    if (data['dealState'] != null) {
+      try {
+        dealState = DealState.fromJson(
+            Map<String, dynamic>.from(data['dealState'] as Map));
+      } catch (_) {}
+    }
+
     return SessionSnapshot(
       exists: true,
       roomCode: roomCode,
@@ -341,6 +367,7 @@ class SessionSnapshot {
       isPublic: data['isPublic'] as bool? ?? false,
       gameState: gameState,
       playState: playState,
+      dealState: dealState,
     );
   }
 }

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
 import '../models/bid.dart';
+import '../models/deal_state.dart';
 import '../models/playing_card.dart';
 import '../models/play_state.dart';
 import '../services/session_service.dart';
@@ -64,10 +66,78 @@ class _DealScreenState extends State<DealScreen> {
   /// For 2-point bids with a large enough talon, starts at 2 and can grow.
   int _talonRevealCount = 0;
 
+  // ── Online mode ────────────────────────────────────────────────────────────
+  StreamSubscription<SessionSnapshot>? _sessionSub;
+  bool _navigatedToPlay = false;
+
   @override
   void initState() {
     super.initState();
-    _initDeal();
+    if (widget.isOnline) {
+      // In online mode, state comes from Firebase.
+      _deal = const DealResult(hands: [], middle: []);
+      _passed = [];
+      _sessionSub = widget.sessionService!
+          .watchSession(widget.roomCode!)
+          .listen(_onSessionUpdate);
+    } else {
+      _initDeal();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sessionSub?.cancel();
+    super.dispose();
+  }
+
+  void _onSessionUpdate(SessionSnapshot snapshot) {
+    if (!mounted) return;
+
+    // Sync deal state from Firebase.
+    if (snapshot.dealState != null) {
+      final ds = snapshot.dealState!;
+      setState(() {
+        _deal = DealResult(hands: ds.hands, middle: ds.talon);
+        _phase = ds.phase == 'callerSetup'
+            ? _DealPhase.callerSetup
+            : _DealPhase.bidding;
+        _currentBidderIndex = ds.currentBidderIndex;
+        _highestBid = ds.highestBid;
+        _highestBidderIndex = ds.highestBidderIndex;
+        _passed = List<bool>.from(ds.passed);
+        _callerIndex = ds.callerIndex;
+        _trump = ds.trump;
+        _calledCard = ds.calledCard;
+        _talonRevealCount = ds.talonRevealCount;
+      });
+    }
+
+    // Auto-navigate to PlayRoundScreen when playState appears.
+    if (snapshot.playState != null && !_navigatedToPlay) {
+      _navigatedToPlay = true;
+      final playState = snapshot.playState!;
+      Navigator.of(context)
+          .pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => PlayRoundScreen(
+                initialState: playState,
+                onRoundComplete:
+                    (scores, {String? caller, String? partner}) {
+                  widget.onRoundComplete(
+                      scores, caller: caller, partner: partner);
+                  if (widget.isOnline) {
+                    widget.sessionService!
+                        .endPlayRound(widget.roomCode!);
+                  }
+                },
+                sessionService: widget.sessionService,
+                roomCode: widget.roomCode,
+                myPlayerIndex: widget.myPlayerIndex,
+              ),
+            ),
+          );
+    }
   }
 
   // ── Dealing ────────────────────────────────────────────────────────────────
@@ -89,6 +159,7 @@ class _DealScreenState extends State<DealScreen> {
       _highestBidderIndex = _currentBidderIndex;
       _advanceBidder();
     });
+    _syncDealState();
   }
 
   void _onPass() {
@@ -96,6 +167,7 @@ class _DealScreenState extends State<DealScreen> {
       _passed[_currentBidderIndex] = true;
       _advanceBidder();
     });
+    _syncDealState();
   }
 
   void _advanceBidder() {
@@ -106,7 +178,20 @@ class _DealScreenState extends State<DealScreen> {
     // All players passed → re-deal
     if (active.isEmpty) {
       _showReDealSnackBar();
-      _initDeal();
+      if (widget.isOnline) {
+        // Re-deal via Firebase so all players get new cards.
+        final deal = Deck.dealWithMiddle(widget.playerNames.length);
+        final dealState = DealState(
+          hands: deal.hands,
+          talon: deal.middle,
+          phase: 'bidding',
+          currentBidderIndex: 0,
+          passed: List.filled(widget.playerNames.length, false),
+        );
+        widget.sessionService!.updateDealState(widget.roomCode!, dealState);
+      } else {
+        _initDeal();
+      }
       return;
     }
 
@@ -166,6 +251,7 @@ class _DealScreenState extends State<DealScreen> {
         pointsPerTrick: _talonRevealCount,
       );
     });
+    _syncDealState();
   }
 
   void _showReDealSnackBar() {
@@ -176,6 +262,33 @@ class _DealScreenState extends State<DealScreen> {
       );
     });
   }
+
+  /// Writes the current local deal state to Firebase (online mode only).
+  void _syncDealState() {
+    if (!widget.isOnline) return;
+    final dealState = DealState(
+      hands: _deal.hands,
+      talon: _deal.middle,
+      phase: _phase == _DealPhase.callerSetup ? 'callerSetup' : 'bidding',
+      currentBidderIndex: _currentBidderIndex,
+      highestBid: _highestBid,
+      highestBidderIndex: _highestBidderIndex,
+      passed: _passed,
+      callerIndex: _callerIndex,
+      trumpName: _trump.name,
+      calledCard: _calledCard,
+      talonRevealCount: _talonRevealCount,
+    );
+    widget.sessionService!.updateDealState(widget.roomCode!, dealState);
+  }
+
+  /// Whether this device's player is the current bidder (online mode).
+  bool get _isMyTurnToBid =>
+      !widget.isOnline || widget.myPlayerIndex == _currentBidderIndex;
+
+  /// Whether this device's player is the caller (online mode).
+  bool get _isMeCaller =>
+      !widget.isOnline || widget.myPlayerIndex == _callerIndex;
 
   // ── Start round ────────────────────────────────────────────────────────────
 
@@ -190,32 +303,42 @@ class _DealScreenState extends State<DealScreen> {
     );
 
     if (widget.isOnline) {
+      // Write playState and clear dealState. All players will auto-navigate
+      // to PlayRoundScreen via the session stream listener.
       widget.sessionService!.startPlayRound(widget.roomCode!, playState);
-    }
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PlayRoundScreen(
-          initialState: playState,
-          onRoundComplete: (scores, {String? caller, String? partner}) {
-            Navigator.of(context).pop();
-            widget.onRoundComplete(scores, caller: caller, partner: partner);
-            if (widget.isOnline) {
-              widget.sessionService!.endPlayRound(widget.roomCode!);
-            }
-          },
-          sessionService: widget.sessionService,
-          roomCode: widget.roomCode,
-          myPlayerIndex: widget.myPlayerIndex,
+      widget.sessionService!.endDeal(widget.roomCode!);
+      // Navigation happens via _onSessionUpdate when playState appears.
+    } else {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PlayRoundScreen(
+            initialState: playState,
+            onRoundComplete: (scores, {String? caller, String? partner}) {
+              Navigator.of(context).pop();
+              widget.onRoundComplete(scores,
+                  caller: caller, partner: partner);
+            },
+            sessionService: widget.sessionService,
+            roomCode: widget.roomCode,
+            myPlayerIndex: widget.myPlayerIndex,
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    // In online mode, wait for initial data from Firebase.
+    if (widget.isOnline && _deal.hands.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Opbud')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_phase == _DealPhase.bidding
@@ -234,27 +357,43 @@ class _DealScreenState extends State<DealScreen> {
                   highestBid: _highestBid,
                   highestBidderIndex: _highestBidderIndex,
                   passed: _passed,
-                  onBid: _onBid,
-                  onPass: _onPass,
+                  onBid: _isMyTurnToBid ? _onBid : null,
+                  onPass: _isMyTurnToBid ? _onPass : null,
+                  myPlayerIndex: widget.myPlayerIndex,
                 )
-              : _CallerSetupPhase(
-                  playerNames: widget.playerNames,
-                  callerIndex: _callerIndex,
-                  bid: _highestBid!,
-                  callerHand: _deal.hands[_callerIndex],
-                  talon: _deal.middle,
-                  talonRevealCount: _talonRevealCount,
-                  trump: _trump,
-                  calledCard: _calledCard,
-                  onTrumpChanged: (suit) => setState(() => _trump = suit),
-                  onCalledCardChanged: (card) =>
-                      setState(() => _calledCard = card),
-                  onRevealNextCard:
-                      _talonRevealCount < _deal.middle.length
-                          ? _onRevealNextTalonCard
-                          : null,
-                  onStart: _startRound,
-                ),
+              : _isMeCaller
+                  ? _CallerSetupPhase(
+                      playerNames: widget.playerNames,
+                      callerIndex: _callerIndex,
+                      bid: _highestBid!,
+                      callerHand: _deal.hands[_callerIndex],
+                      talon: _deal.middle,
+                      talonRevealCount: _talonRevealCount,
+                      trump: _trump,
+                      calledCard: _calledCard,
+                      onTrumpChanged: (suit) {
+                        setState(() => _trump = suit);
+                        _syncDealState();
+                      },
+                      onCalledCardChanged: (card) {
+                        setState(() => _calledCard = card);
+                        _syncDealState();
+                      },
+                      onRevealNextCard:
+                          _talonRevealCount < _deal.middle.length
+                              ? _onRevealNextTalonCard
+                              : null,
+                      onStart: _startRound,
+                    )
+                  : _WaitingForCallerSetup(
+                      playerNames: widget.playerNames,
+                      callerIndex: _callerIndex,
+                      bid: _highestBid!,
+                      myPlayerIndex: widget.myPlayerIndex,
+                      myHand: widget.myPlayerIndex != null
+                          ? _deal.hands[widget.myPlayerIndex!]
+                          : const [],
+                    ),
         ),
       ),
     );
@@ -276,6 +415,7 @@ class _BiddingPhase extends StatelessWidget {
     required this.passed,
     required this.onBid,
     required this.onPass,
+    this.myPlayerIndex,
   });
 
   final List<String> playerNames;
@@ -285,8 +425,11 @@ class _BiddingPhase extends StatelessWidget {
   final Bid? highestBid;
   final int? highestBidderIndex;
   final List<bool> passed;
-  final ValueChanged<Bid> onBid;
-  final VoidCallback onPass;
+  final ValueChanged<Bid>? onBid;
+  final VoidCallback? onPass;
+
+  /// This device's player index (null = local mode, shows current bidder's hand).
+  final int? myPlayerIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -446,7 +589,7 @@ class _BiddingPhase extends StatelessWidget {
         ),
         const SizedBox(height: 8),
 
-        // ── Current bidder's hand ────────────────────────────────────────────
+        // ── Current bidder's hand (or own hand in online mode) ────────────────
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -458,14 +601,19 @@ class _BiddingPhase extends StatelessWidget {
                     Icon(Icons.style, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
                     Text(
-                      '$currentName – din hånd',
+                      myPlayerIndex != null
+                          ? '${playerNames[myPlayerIndex!]} – din hånd'
+                          : '$currentName – din hånd',
                       style: theme.textTheme.titleSmall
                           ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                _HandReadOnly(hand: currentHand),
+                _HandReadOnly(
+                    hand: myPlayerIndex != null
+                        ? hands[myPlayerIndex!]
+                        : currentHand),
               ],
             ),
           ),
@@ -484,42 +632,62 @@ class _BiddingPhase extends StatelessWidget {
                     Icon(Icons.leaderboard, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
                     Text(
-                      '$currentName – vælg bud eller pas',
+                      onBid != null
+                          ? '$currentName – vælg bud eller pas'
+                          : 'Venter på $currentName…',
                       style: theme.textTheme.titleSmall
                           ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    ...availableBids.map(
-                      (bid) => ElevatedButton(
-                        onPressed: () => onBid(bid),
-                        style: ElevatedButton.styleFrom(
+                if (onBid != null)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ...availableBids.map(
+                        (bid) => ElevatedButton(
+                          onPressed: () => onBid!(bid),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                          ),
+                          child: Text(
+                            bid.label,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: onPass,
+                        icon: const Icon(Icons.do_not_disturb),
+                        label: const Text('Pas'),
+                        style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 20, vertical: 12),
                         ),
-                        child: Text(
-                          bid.label,
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
+                      ),
+                    ],
+                  )
+                else
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 12),
+                          Text(
+                            '$currentName overvejer…',
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(color: Colors.black54),
+                          ),
+                        ],
                       ),
                     ),
-                    OutlinedButton.icon(
-                      onPressed: onPass,
-                      icon: const Icon(Icons.do_not_disturb),
-                      label: const Text('Pas'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
               ],
             ),
           ),
@@ -801,6 +969,115 @@ class _CallerSetupPhase extends StatelessWidget {
           onPressed: onStart,
           icon: const Icon(Icons.play_arrow),
           label: const Text('Begynd runde'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Waiting view for non-caller players during caller setup
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shown to non-caller players while the bid winner selects trump and partner.
+class _WaitingForCallerSetup extends StatelessWidget {
+  const _WaitingForCallerSetup({
+    required this.playerNames,
+    required this.callerIndex,
+    required this.bid,
+    this.myPlayerIndex,
+    this.myHand = const [],
+  });
+
+  final List<String> playerNames;
+  final int callerIndex;
+  final Bid bid;
+  final int? myPlayerIndex;
+  final List<PlayingCard> myHand;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final callerName = playerNames[callerIndex];
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Winner banner
+        Card(
+          color: theme.colorScheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.emoji_events, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$callerName vandt buddet',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Bud: ${bid.label}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Own hand
+        if (myHand.isNotEmpty) ...[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.style, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        myPlayerIndex != null
+                            ? '${playerNames[myPlayerIndex!]} – din hånd'
+                            : 'Din hånd',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _HandReadOnly(hand: myHand),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // Waiting indicator
+        Center(
+          child: Column(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 12),
+              Text(
+                '$callerName vælger trumf og makker…',
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: Colors.black54),
+              ),
+            ],
+          ),
         ),
       ],
     );
