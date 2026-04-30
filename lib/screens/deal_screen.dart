@@ -782,7 +782,7 @@ class _CallerSetupPhase extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Vælg det kort der identificerer din makker (valgfrit)',
+                  'Vælg es der identificerer din makker (valgfrit)',
                   style:
                       theme.textTheme.bodySmall?.copyWith(color: Colors.black54),
                 ),
@@ -952,7 +952,7 @@ class _CardTile extends StatelessWidget {
 // Called card picker (partner identification)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A compact card picker: select suit then rank.
+/// A compact card picker: select a suit to call its ace as partner.
 class _CalledCardPicker extends StatefulWidget {
   const _CalledCardPicker({
     required this.selectedCard,
@@ -1012,22 +1012,7 @@ class _CalledCardPickerState extends State<_CalledCardPicker> {
             }),
           ],
         ),
-        if (_suit != null) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: Rank.values.reversed.map((rank) {
-              final card = PlayingCard(suit: _suit!, rank: rank);
-              final selected = widget.selectedCard == card;
-              return ChoiceChip(
-                label: Text(rank.label),
-                selected: selected,
-                onSelected: (_) => widget.onChanged(card),
-              );
-            }).toList(),
-          ),
-        ],
+
       ],
     );
   }
